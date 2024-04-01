@@ -1,0 +1,225 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Running Monitoring
+
+// ---------------------------------------------------------------
+// Imports and Parameters:
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:utilities/parameters');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var params = utParams.params;
+var maxTile = 1000;
+var extraInfo = {
+  version: '0.1',
+  user: 'xjtang'
+};
+
+// ---------------------------------------------------------------
+// Functions:
+var normalizeData = function(data, ccdImg, band, params, harmonics) {
+  var scores = utNRT.getScores(data, ccdImg, band, params, harmonics);
+  var flags = utNRT.getFlag(scores, band, params);
+  return flags;
+};
+
+var genTags = function(pre, m) {
+  var tagList = [];
+  for (var i = 1; i <= m; i++) {
+    tagList.push(pre.concat(i.toString()));
+  }
+  //print(tagList);
+  return tagList;
+};
+
+var save = function(img, des, output, region, res, crs) {
+  Export.image.toAsset({
+        image: img,
+        scale: res,
+        description: des,
+        assetId: output,
+        crs: crs,
+        region: region,
+        maxPixels: 1e13,
+        pyramidingPolicy: {'.default': 'mean'}
+  });
+};
+
+var runTile = function(region, params, h, v) {
+  var ccd = ee.ImageCollection(params.wd + 'training');
+  var cache = ee.ImageCollection(params.wd + 'cache');
+  
+  var tileID = 'h' + ('000' + h).substr(-3) + 'v' + ('000' + v).substr(-3);
+  var flags = ee.ImageCollection([]);
+  
+  if (params.training.LST.enable) {
+  //if (false) {
+    var LST_Data = utInput.getData(region, params, params.period.monitor, 'Landsat', true);
+    var LST_Training = ccd.filter(ee.Filter.eq('sensor', 'Landsat'))
+                          .filterBounds(region)
+                          .filter(ee.Filter.eq('horizontal', h))
+                          .filter(ee.Filter.eq('vertical', v));
+                          
+    if (LST_Training.size().getInfo() > 0) {
+      var LST_ccdIMG = utNRT.getCCDImage(LST_Training.mosaic(), params.training.LST.band, 
+                                          params.training.LST.harmonics);
+      //print(LST_ccdIMG);
+      var LST_Flags = normalizeData(LST_Data, LST_ccdIMG, params.training.LST.band, params.monitor.LST,
+                                    params.training.LST.harmonics);
+      //print(LST_Flags);
+      flags = flags.merge(LST_Flags);
+    } else {
+      print('LST ' + tileID + ' training file not exist.');
+    }
+  }
+
+  if (params.training.S2.enable) {
+  //if (false) {
+    var S2_Data = utInput.getData(region, params, params.period.monitor, 'Sentinel-2', true);
+    var S2_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-2'))
+                          .filterBounds(region)
+                          .filter(ee.Filter.eq('horizontal', h))
+                          .filter(ee.Filter.eq('vertical', v));
+    if (S2_Training.size().getInfo() > 0) {
+      var S2_ccdIMG = utNRT.getCCDImage(S2_Training.mosaic(), params.training.S2.band,
+                                        params.training.S2.harmonics);
+      var S2_Flags = normalizeData(S2_Data, S2_ccdIMG, params.training.S2.band, params.monitor.S2, 
+                                    params.training.S2.harmonics);
+      flags = flags.merge(S2_Flags);
+    } else {
+      print('S2 ' + tileID + ' training file not exist.');
+    }
+  }
+
+  if (params.training.S1.enable) {
+  //if (false) {
+    if (params.preprocess.S1.splitOrbit){
+      var S1_data = utInput.getData(region, params, params.period.monitor, 'Sentinel-1', false);
+      var orbitList = ee.Dictionary(S1_data.aggregate_histogram('relativeOrbitNumber_start'))
+                        .keys();
+      //print(orbitList);
+      var nOrbit = orbitList.length().getInfo();
+      for (var j = 0; j < nOrbit; j++) {
+        var orbit = ee.Number.parse(orbitList.get(j));
+        //print(orbit);
+        var S1_data_orbit = S1_data.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+        //print(S1_data_orbit);
+        var S1_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1'))
+                              .filterBounds(region)
+                              .filter(ee.Filter.eq('horizontal', h))
+                              .filter(ee.Filter.eq('vertical', v))
+                              .filter(ee.Filter.eq('orbit', orbit));
+        if (S1_Training.size().getInfo() > 0) {
+          var S1_ccdIMG = utNRT.getCCDImage(S1_Training.mosaic(), params.training.S1.band, params.training.S1.harmonics);
+          var S1_Flags = normalizeData(S1_data_orbit, S1_ccdIMG, params.training.S1.band, params.monitor.S1,
+                                        params.training.S1.harmonics);
+          flags = flags.merge(S1_Flags);
+        } else {
+          print('Orbit ' + orbit.getInfo() + 'training file not exist.');
+        }
+      }
+    } else {
+        var S1_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1'))
+                              .filterBounds(region)
+                              .filter(ee.Filter.eq('horizontal', h))
+                              .filter(ee.Filter.eq('vertical', v));
+        if (S1_Training.size().getInfo() > 0) {
+          var S1_ccdIMG = utNRT.getCCDImage(S1_Training.mosaic(), params.training.S1.band, 
+                                            params.training.S1.harmonics);
+          var S1_Flags = normalizeData(S1_data_orbit, S1_ccdIMG, params.monitor.S1, params.training.S1.harmonics);
+          flags = flags.merge(S1_Flags);
+        } else {
+          print('S1 ' + tileID + ' training file not exist.');
+        }
+    }
+  }
+  //print(flags);
+  //Map.addLayer(flags, {}, 'flags', false);
+  
+  var dates = ee.Image.constant(ee.List.repeat(0, params.monitor.strikeOut))
+                .rename(genTags('Date_', params.monitor.strikeOut));
+  //print(dates);
+  var initial = ee.Image([0, 0, 0, 0]).rename(['Change', 'Recover', 'DoC', 'DoD'])
+                  .addBands(dates).toUint16();
+  //print(initial);
+  
+  var cacheStartDate = params.period.monitor.start;
+  var trainingEndYear = params.period.training.end.slice(0, 4);
+  var baseDate = trainingEndYear + '-01-01';
+
+  if (params.monitor.resume) {
+    var lastEndDate = ee.Date(params.period.monitor.start).advance(-1, 'day')
+                          .format('YYYY-MM-dd').getInfo();
+    var thisCache = cache.filterBounds(region).filter(ee.Filter.eq('end', lastEndDate));
+    if (thisCache.size().getInfo() > 0) {
+      initial = cache.filterBounds(region).mosaic();
+      cacheStartDate = cache.first().get('start').getInfo();
+      print('Successgully read cache');
+    }
+  }
+
+  var endDateLabel = params.period.monitor.end.replace(/-/g, '');
+  var cache_des = tileID + '_' + endDateLabel + '_C';
+
+  var monitor_result = utNRT.monitor(flags.sort('system:time_start'), initial, params.monitor, baseDate)
+    .set({tile: tileID}).set({LST: params.training.LST.enable.toString()})
+    .set({S1: params.training.S1.enable.toString()})
+    .set({S2: params.training.S2.enable.toString()})
+    .set({horizontal: h, vertical: v})
+    .set({baseDate: baseDate})
+    .set({start: cacheStartDate, end: params.period.monitor.end})
+    .set(extraInfo)
+    .set({'system:time_start': ee.Date(cacheStartDate).millis()})
+    .set({'system:time_end': ee.Date(params.period.monitor.end).millis()})
+    .set({'system:index': cache_des})
+    .updateMask(params.forestMask).toUint16();
+  //print(monitor_result);
+  //Map.addLayer(monitor_result);
+
+  var cache_output = params.wd + 'cache/' + cache_des;
+  
+  try{
+    ee.data.getAsset(cache_output);
+    print('Already exists: ' + cache_des);
+  } catch(err) {
+    save(monitor_result, cache_des, cache_output, region, params.monitor.res, params.proj);
+  }
+};
+  
+var runRegion = function(region, params) {
+  var tiles = params.grid.filterBounds(region);
+  var tiles2 = tiles.toList(maxTile);
+  var nTile = tiles.size().getInfo();
+  for (var i = 0; i < nTile; i++) {
+    var tile = ee.Feature(tiles2.get(i));
+    var h = tile.getNumber('horizontal').getInfo();
+    var v = tile.getNumber('vertical').getInfo();
+    var geometry = tile.geometry();
+    runTile(geometry, params, h, v);
+  }
+};
+
+var runSingleTile = function(h, v, params) {
+  var tile = params.grid.filter(ee.Filter.eq('horizontal', h))
+                        .filter(ee.Filter.eq('vertical', v))
+                        .first();
+  var geometry = tile.geometry();
+  runTile(geometry, params, h, v);
+};
+
+// ---------------------------------------------------------------
+// Run:
+//runRegion(params.area, params);
+//runTile(params.area, params, 1, 1);
+//runSingleTile(48, 25, params);
+//Map.addLayer(image.select('Filtered'), params.visual.alerts, 'Alerts', true);
+
+// ---------------------------------------------------------------
+// Exports:
+exports = {
+  runRegion: runRegion,
+  runTile: runTile,
+  runSingleTile: runSingleTile,
+};
+
+// End

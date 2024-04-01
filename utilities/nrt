@@ -1,0 +1,245 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Utilities for near real-time monitoring
+
+// ---------------------------------------------------------------
+// Training Utilities
+var ut = require('users/xjtang/FNRT:utilities/common');
+
+var training = function(col, band, harmonics) {
+  if (harmonics == 2) {
+    var bands = ['INTP', 'SLP', 'COS', 'SIN', 'COS2', 'SIN2', band];
+  } else if (harmonics == 3) {
+    var bands = ['INTP', 'SLP', 'COS', 'SIN', 'COS2', 'SIN2', 'COS3', 'SIN3', band];
+  } else {
+    var bands = ['INTP', 'SLP', 'COS', 'SIN', band];
+  }
+  
+  var prepareData = function(col, band) {
+    return ee.ImageCollection(col.map(function(img){
+      return addDependents(img.select(band))
+              .select(bands)
+              .updateMask(img.select(band).mask());
+    }));
+  };
+  
+  var addDependents = function(img){
+    var t = ee.Number(ut.convertDateFormat(ee.Date(img.get('system:time_start')), 1));
+    var PI2 = 2.0 * Math.PI;
+    var OMEGAS = [PI2 / 365.25, PI2, PI2 / (1000 * 60 * 60 * 24 * 365.25)];
+    var omega = OMEGAS[1];
+    
+    if (harmonics == 2) {
+      var dependents = ee.Image.constant([1, t, t.multiply(omega).cos(),
+                                          t.multiply(omega).sin(), 
+                                          t.multiply(omega * 2).cos(),
+                                          t.multiply(omega * 2).sin()])
+                                          .float().rename(['INTP', 'SLP', 'COS', 'SIN', 
+                                                'COS2', 'SIN2']);
+    } else if (harmonics == 3) {
+      var dependents = ee.Image.constant([1, t, t.multiply(omega).cos(),
+                                          t.multiply(omega).sin(), 
+                                          t.multiply(omega * 2).cos(),
+                                          t.multiply(omega * 2).sin(),
+                                          t.multiply(omega * 3).cos(),
+                                          t.multiply(omega * 3).sin()])
+                                          .float().rename(['INTP', 'SLP', 'COS', 'SIN', 
+                                                'COS2', 'SIN2', 'COS3', 'SIN3']);
+    } else {
+      var dependents = ee.Image.constant([1, t, t.multiply(omega).cos(),
+                                          t.multiply(omega).sin()])
+                                          .float().rename(['INTP', 'SLP', 'COS', 'SIN']);
+    }
+    
+    return img.addBands(dependents);
+  };
+  var col2 = prepareData(col, band);
+  var nCoef = 2 + harmonics * 2;
+  var model = col2.reduce(ee.Reducer.robustLinearRegression(nCoef, 1), 4)
+                  .rename([band + '_coefs', band + '_rmse']);
+  return model.select(band + '_coefs').arrayTranspose()
+            .addBands(model.select(band + '_rmse'));
+};
+
+// ---------------------------------------------------------------
+// Monitoring Utilities
+var getCCDImage = function(ccd, band, harmonics) {
+  if (harmonics == 2) {
+    var harms = ['INTP', 'SLP', 'COS', 'SIN', 'COS2', 'SIN2'];
+  } else if (harmonics == 3) {
+    var harms = ['INTP', 'SLP', 'COS', 'SIN', 'COS2', 'SIN2', 'COS3', 'SIN3'];
+  } else {
+    var harms = ['INTP', 'SLP', 'COS', 'SIN'];
+  }
+  
+  var genCoefImg = function(ccd, band, coef) {
+    var zeros = ee.Array(0).repeat(0, 1);
+    var coefImg = ccd.select(band + coef).arrayCat(zeros, 0).float().arraySlice(0, 0, 1);
+    return ee.Image(coefImg.arrayFlatten([[ee.String('S1_').cat(band).cat(coef)]]));
+  };
+  
+  var genHarmImg = function(ccd, band) {
+    var zeros = ee.Image(ee.Array([ee.List.repeat(0, harms.length)])).arrayRepeat(0, 1);
+    var coefImg = ccd.select(band + 'coefs').arrayCat(zeros, 0).float().arraySlice(0, 0, 1);
+    return ee.Image(coefImg.arrayFlatten([[ee.String('S1_').cat(band).cat('coef')], harms]));
+  };
+  
+  band = band + '_';
+  var rmse = genCoefImg(ccd, band, 'rmse').rename('S1_' + band + 'RMSE');
+  var coef = genHarmImg(ccd, band);
+  return ee.Image.cat(rmse, coef);
+};
+
+var predict = function(ccdImg, date, band, harmonics) {
+  var t = ee.Number(date);
+  var omega = 2.0 * Math.PI;
+
+  if (harmonics == 2) {
+    var tempImg = ee.Image.constant([1, t, t.multiply(omega).cos(),
+                                      t.multiply(omega).sin(), 
+                                      t.multiply(omega * 2).cos(),
+                                      t.multiply(omega * 2).sin()]).float();
+  } else if (harmonics == 3) {
+    var tempImg = ee.Image.constant([1, t, t.multiply(omega).cos(),
+                                      t.multiply(omega).sin(), 
+                                      t.multiply(omega * 2).cos(),
+                                      t.multiply(omega * 2).sin(),
+                                      t.multiply(omega * 3).cos(),
+                                      t.multiply(omega * 3).sin()]).float();
+  } else {
+    var tempImg = ee.Image.constant([1, t, t.multiply(omega).cos(),
+                                      t.multiply(omega).sin()]).float();
+  }
+
+  var coefs = ccdImg.select('.*' + band + '.*coef.*');
+  return tempImg.multiply(coefs).reduce('sum');
+};
+
+var getScores = function(col, ccdImg, band, params, harmonics) {
+  var synt_name = band + '_Synt';
+  var rmse_name = band + '_RMSE';
+  var res_name = band + '_Res';
+  var score_name = band + '_Score';
+
+  if (params.maxValue) {
+    return ee.ImageCollection(col.map(function(img) {
+      var date = ut.convertDateFormat(ee.Date(img.get('system:time_start')), 1);
+      var dateString = ee.Date(img.get('system:time_start')).format('yyyyMMdd');
+      var synt = predict(ccdImg, date, band, harmonics).rename(synt_name);
+      synt = synt.where(synt.gt(params.maxValue), params.maxValue);
+      var rmse = ccdImg.select('.*RMSE')
+                    .where(ccdImg.select('.*RMSE').lt(params.minRMSE), params.minRMSE)
+                    .rename(rmse_name);
+      var residual = synt.select(synt_name).subtract(img.select(band)).rename(res_name);
+      var score = residual.select(res_name).divide(rmse.select(rmse_name)).rename(score_name);
+      return img.select(band).addBands(synt).addBands(residual).addBands(rmse).addBands(score);
+    }));
+  } else {
+    return ee.ImageCollection(col.map(function(img) {
+      var date = ut.convertDateFormat(ee.Date(img.get('system:time_start')), 1);
+      var dateString = ee.Date(img.get('system:time_start')).format('yyyyMMdd');
+      var synt = predict(ccdImg, date, band, harmonics).rename(synt_name);
+      var rmse = ccdImg.select('.*RMSE')
+                    .where(ccdImg.select('.*RMSE').lt(params.minRMSE), params.minRMSE)
+                    .rename(rmse_name);
+      var residual = synt.select(synt_name).subtract(img.select(band)).rename(res_name);
+      var score = residual.select(res_name).divide(rmse.select(rmse_name)).rename(score_name);
+      return img.select(band).addBands(synt).addBands(residual).addBands(rmse).addBands(score);
+    }));
+  }
+};
+
+var getFlag = function(col, band, params) {
+  var scores = col.select(band + '_Score');
+  
+  if (params.directional == 1) {
+    var flags = ee.ImageCollection(scores.map(function(img) {
+      return img.addBands(img.gt(params.zThres)
+                .rename(band + '_Flag'))
+                .set({sensor: params.id});
+    }));
+  } else if (params.directional == -1) {
+    var flags = ee.ImageCollection(scores.map(function(img) {
+      return img.addBands(img.lt(params.zThres)
+                .rename(band + '_Flag'))
+                .set({sensor: params.id});
+    }));  
+  } else {
+    var flags = ee.ImageCollection(scores.map(function(img) {
+      return img.addBands(img.abs().gt(params.zThres)
+                .rename(band + '_Flag'))
+                .set({sensor: params.id});
+    }));  
+  }
+  
+  if (params.changeOnly) {
+    return ee.ImageCollection(flags.map(function(img){
+      return img.selfMask().select(band + '_Flag');
+    }));
+  } else {
+    return flags.select(band + '_Flag')
+  }
+};
+
+var monitor = function(col, initial, params, baseDate) {
+  var shiftDates = function(img, n, which, t) {
+    var shifted = ee.List.sequence(1, n-1);
+    return img.where(which, img.select(shifted).addBands(ee.Image(t)));
+  };
+
+  var m = params.monitorWindow;
+  var n = params.strikeOut;
+  var shift = Math.pow(2, m - 1) - 1;
+  //print(col);
+  //print(col.filterDate('2023-12-30','2023-12-31'));
+  //Map.addLayer(col.filterDate('2023-12-30','2023-12-31').first(), {}, 'last image');
+  //print(ee.Number(ut.convertDateFormat(ee.Date(col.first().get('system:time_start')), 3)));
+  
+  var check = function(img, result) {
+  //var img = col.first();
+  //var result = initial;
+  
+    var doy = ee.Number(ee.Date(img.get('system:time_start')).difference(ee.Date(baseDate), 'day')).round().toInt();
+    //var sensor = ee.Image(result).select('Sensor');
+    var change = ee.Image(result).select('Change');
+    var dates = ee.Image(result).select('Date_.*');
+    var recover = ee.Image(result).select('Recover');
+    var doc = ee.Image(result).select('DoC');
+    var dod = ee.Image(result).select('DoD');
+    var shiftImg = img.mask().eq(0).multiply(shift + 1).add(shift);
+    //Map.addLayer(shiftImg, {}, 'shift');
+    var newDates = shiftDates(dates, n, ee.Image(1).updateMask(img).updateMask(dod.eq(0)).unmask(), doy);
+    //Map.addLayer(change, {}, 'change 1');
+    //Map.addLayer(ee.Image(1).updateMask(img).unmask(), {}, 'eeimage 1');
+    //Map.addLayer(img.geometry());
+    //Map.addLayer(change.bitwiseAnd(shiftImg), {}, 'change 12');
+    //Map.addLayer(change.bitwiseAnd(shiftImg).multiply(shiftImg.eq(shift).add(1)), {}, 'change 13');
+
+    change = change.bitwiseAnd(shiftImg).multiply(shiftImg.eq(shift).add(1))
+                    .add(ee.Image(1).updateMask(img).unmask());
+    //Map.addLayer(change, {}, 'change');
+    //sensor = sensor.add(change.bitCount().gte(n).multiply(date.eq(0))
+    //            .multiply(ee.Number(img.get('sensor'))));
+    doc = doc.add(change.bitCount().gte(n).multiply(dod.eq(0)).multiply(newDates.select(0)));
+    dod = dod.add(change.bitCount().gte(n).multiply(dod.eq(0)).multiply(doy));
+    //Map.addLayer(date, {}, 'date');
+    recover = recover.add(change.bitCount().eq(0).multiply(dod.gt(0)).multiply(recover.eq(0))
+                .multiply(doy));
+    return change.addBands(newDates).addBands(recover).addBands(doc).addBands(dod);//.addBands(sensor);
+  };
+
+  return ee.Image(col.iterate(check, initial));
+};
+
+// ---------------------------------------------------------------
+// Exports
+exports = {
+  training: training,
+  getCCDImage: getCCDImage,
+  getScores: getScores,
+  getFlag: getFlag,
+  monitor: monitor
+};
+
+// End

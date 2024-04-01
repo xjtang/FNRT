@@ -1,0 +1,98 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Utilities for common operation
+
+// ---------------------------------------------------------------
+// Common Utilities
+var sensorToShort = function(sensor){
+  if (sensor == 'Sentinel-2') {
+    return 'S2';
+  } else if (sensor == 'Sentinel-1') {
+    return 'S1';
+  } else {
+    return 'LST';
+  }
+};
+
+var convertDateFormat = function(date, format) {
+  if (format == 0) { 
+    var epoch = 719529;
+    var days = date.difference(ee.Date('1970-01-01'), 'day');
+    return days.add(epoch);
+  } else if (format == 1) {
+    var year = date.get('year');
+    var fYear = date.difference(ee.Date.fromYMD(year, 1, 1), 'year');
+    return year.add(fYear);
+  } else if (format == 3) {
+    var year = date.get('year');
+    var doy = date.difference(ee.Date.fromYMD(year, 1, 1), 'day');
+    return doy.add(1);
+  } else {
+    return date.millis();
+  }
+};
+
+var getDateList = function(collection, format) {
+  return collection.aggregate_array('system:time_start')
+                    .map(function(t){return(convertDateFormat(ee.Date(t),1))});
+};
+
+var addImgDate = function(col) {
+  return col.map(function(img){
+    return img.set({image_date: img.date().format('yyyy-MM-dd')});
+  });
+};
+
+var dailyComposite = function(col) {
+  var dates = col.aggregate_array('image_date').distinct();
+  
+  var combine = function(col) {
+    //var img = col.reduce(ee.Reducer.firstNonNull(), 8);
+    var img = col.mosaic();
+    var first = col.first();
+    return img.rename(first.bandNames()).copyProperties(first).set({'system:time_start': first.get('system:time_start')});
+  };
+  
+  return ee.ImageCollection(dates.map(function(date) {
+    var col2 = col.filterMetadata('image_date', 'equals', date);
+    return ee.Algorithms.If(
+      col2.size().gte(2),
+      combine(col2),
+      col2.first()
+    );
+  }));
+};
+
+// ---------------------------------------------------------------
+// UI Utilities
+var removeLayer = function(mapObject, name) {
+  var layers = mapObject.layers();
+  var nLayer = layers.length();
+  for (var i = nLayer-1; i >= 0; i--) {
+    var layer = layers.get(i);
+    if (layer.getName().match(name)) {
+      layers.remove(layer);
+    }
+  }
+};
+
+var addPixel = function(mapObject, coords, pixelSize, color, name) {
+  var pixel = ee.Geometry.Rectangle([coords.lon-pixelSize, coords.lat-pixelSize, 
+                                      coords.lon+pixelSize, coords.lat+pixelSize]);
+  mapObject.addLayer(pixel, {color: color}, name);
+};
+
+// ---------------------------------------------------------------
+// Exports
+exports = {
+  sensorToShort: sensorToShort,
+  convertDateFormat: convertDateFormat,
+  getDateList: getDateList,
+  addImgDate: addImgDate,
+  dailyComposite: dailyComposite,
+  removeLayer: removeLayer,
+  addPixel: addPixel
+};
+
+// End

@@ -1,0 +1,275 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-78.82369807489944, 38.38741343451214],
+          [-78.82369807489944, 38.386925677088676],
+          [-78.82314017542434, 38.386925677088676],
+          [-78.82314017542434, 38.38741343451214]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Running Model Training (saving to Google Cloud)
+
+// ---------------------------------------------------------------
+// Imports and Parameters:
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:utilities/parameters');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var params = utParams.params;
+var maxTile = 1000;
+var extraInfo = {
+  version: '0.1',
+  user: 'xjtang'
+};
+
+// ---------------------------------------------------------------
+// Functions:
+var runTraining = function(region, params, sensor, band, harmonics) {
+  var data = utInput.getData(region, params, params.period.training, sensor, false);
+  var training = utNRT.training(data, band, harmonics);//.updateMask(params.forestMask);
+  return training;
+};
+
+var genRecord = function(img, des, output) {
+  Export.image.toAsset({
+        image: img,
+        scale: 10000,
+        description: des + '_R',
+        assetId: output,
+        region: geometry
+  });
+};
+
+var saveTrainingToCloud = function(training, folder, des, region, res, bucket) {
+  //print(training);
+  Export.image.toCloudStorage({
+        image: training,
+        scale: res,
+        bucket: bucket,
+        description: des,
+        fileNamePrefix: folder + des,
+        region: region,
+        formatOptions: {cloudOptimized: true},
+        fileDimensions: [20480, 20480],
+        maxPixels: 1e13
+  });
+};
+
+var runTile = function(region, params, h, v) {
+  var tileID = 'h' + ('000' + h).substr(-3) + 'v' + ('000' + v).substr(-3);
+  var trainingEndYear = params.period.training.end.slice(0, 4);
+  
+  if (params.training.LST.enable) {
+  //if (false) {
+    var LST_des = tileID + '_' + params.training.LST.short + '_' + trainingEndYear + '_T';
+    var LST_Output = params.wd + 'training/' + LST_des;
+    
+    try{
+      ee.data.getAsset(LST_Output);
+      print('Already exists: ' + LST_des);
+    } catch(err) {
+      
+      var LST_Record = ee.Image(0).rename('record').selfMask()
+                        .set({tile: tileID, sensor: 'Landsat', short: params.training.LST.short})
+                        .set({horizontal: h, vertical: v})
+                        .set({harmonics: params.training.LST.harmonics})
+                        .set({start: params.period.training.start, end: params.period.training.end})
+                        .set(extraInfo).set({endYear: parseInt(trainingEndYear)})
+                        .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+                        .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+                        .set({'system:index': LST_des});
+      genRecord(LST_Record, LST_des, LST_Output);
+      
+      var LST_folder = 'training/' + params.training.LST.short + '/';
+      var LST_Training = runTraining(region, params, 'Landsat', params.training.LST.band, 
+                                      params.training.LST.harmonics);
+      var LST_ccdIMG = utNRT.getCCDImage(LST_Training, params.training.LST.band, 
+                                          params.training.LST.harmonics)
+              .set({tile: tileID, sensor: 'Landsat', short: params.training.LST.short})
+              .set({horizontal: h, vertical: v})
+              .set({harmonics: params.training.LST.harmonics})
+              .set({start: params.period.training.start, end: params.period.training.end})
+              .set(extraInfo).set({endYear: parseInt(trainingEndYear)})
+              .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+              .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+              .set({'system:index': LST_des});
+
+      saveTrainingToCloud(LST_ccdIMG, LST_folder, LST_des, region, params.training.LST.res, params.bucket);
+    }
+  }
+  
+  if (params.training.S2.enable) {
+  //if (false) {
+    var S2_des = tileID + '_' + params.training.S2.short + '_' + trainingEndYear + '_T';
+    var S2_Output = params.wd + 'training/' + S2_des;
+    
+    try{
+      ee.data.getAsset(S2_Output);
+      print('Already exists: ' + S2_des);
+    } catch(err) {
+      
+      var S2_Record = ee.Image(0).rename('record').selfMask()
+                        .set({tile: tileID, sensor: 'Sentinel-2', short: params.training.S2.short})
+                        .set({horizontal: h, vertical: v})
+                        .set({harmonics: params.training.S2.harmonics})
+                        .set({start: params.period.training.start, end: params.period.training.end})
+                        .set(extraInfo).set({endYear: parseInt(trainingEndYear)})
+                        .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+                        .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+                        .set({'system:index': S2_des});
+      genRecord(S2_Record, S2_des, S2_Output);
+      
+      var S2_folder = 'training/' + params.training.S2.short + '/';
+      var S2_Training = runTraining(region, params, 'Sentinel-2', params.training.S2.band,
+                                    params.training.S2.harmonics);
+      var S2_ccdIMG = utNRT.getCCDImage(S2_Training, params.training.S2.band, 
+                                        params.training.S2.harmonics)
+              .set({tile: tileID, sensor: 'Sentinel-2', short: params.training.S2.short})
+              .set({horizontal: h, vertical: v})
+              .set({harmonics: params.training.S2.harmonics})
+              .set({start: params.period.training.start, end: params.period.training.end})
+              .set(extraInfo).set({endYear: parseInt(trainingEndYear)})
+              .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+              .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+              .set({'system:index': S2_des});
+
+      saveTrainingToCloud(S2_ccdIMG, S2_folder, S2_des, region, params.training.S2.res, params.bucket);
+    }
+  }
+  
+  if (params.training.S1.enable) {
+  //if (false) {
+    var S1_folder = 'training/' + params.training.S1.short + '/';
+  
+    if (params.preprocess.S1.splitOrbit){
+      var S1_data = utInput.getData(region, params, params.period.training, 'Sentinel-1', false);
+      var orbitList = ee.Dictionary(S1_data.aggregate_histogram('relativeOrbitNumber_start'))
+                        .keys();
+      var nOrbit = orbitList.length().getInfo();
+      for (var j = 0; j < nOrbit; j++) {
+        var orbit = ee.Number.parse(orbitList.get(j));
+        var S1_data_orbit = S1_data.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+        var nImage = S1_data_orbit.size().getInfo();
+        //print(nImage);
+        if (nImage > params.training.S1.minImage) {
+          //print(orbit);
+          //print(S1_data_orbit);
+          var S1_des = tileID + '_' + params.training.S1.short + '_' + trainingEndYear + '_OB' + orbit.getInfo() + '_T';
+          var S1_Output = params.wd + 'training/' + S1_des;
+          
+          try{
+            ee.data.getAsset(S1_Output);
+            print('Already exists: ' + S1_des);
+          } catch(err) {
+
+            var S1_Record = ee.Image(0).rename('record').selfMask()
+                              .set({tile: tileID, sensor: 'Sentinel-1', short: params.training.S1.short})
+                              .set({horizontal: h, vertical: v})
+                              .set({harmonics: params.training.S1.harmonics})
+                              .set({start: params.period.training.start, end: params.period.training.end})
+                              .set(extraInfo).set({orbit: orbit}).set({endYear: parseInt(trainingEndYear)})
+                              .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+                              .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+                              .set({'system:index': S1_des});
+            genRecord(S1_Record, S1_des, S1_Output);
+            
+            var S1_Training = utNRT.training(S1_data_orbit, params.training.S1.band, params.training.S1.harmonics)
+                                .updateMask(params.forestMask);
+            var S1_ccdIMG = utNRT.getCCDImage(S1_Training, params.training.S1.band, params.training.S1.harmonics)
+                                .set({tile: tileID, sensor: 'Sentinel-1', short: params.training.S1.short})
+                                .set({horizontal: h, vertical: v})
+                                .set({harmonics: params.training.S1.harmonics})
+                                .set({start: params.period.training.start, end: params.period.training.end})
+                                .set(extraInfo).set({orbit: orbit}).set({endYear: parseInt(trainingEndYear)})
+                                .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+                                .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+                                .set({'system:index': S1_des});
+
+            saveTrainingToCloud(S1_ccdIMG, S1_folder, S1_des, region, params.training.S1.res, params.bucket);
+          }
+          
+        } else {
+          print('Orbit ' + orbit.getInfo() + ' not enough image.');
+        }
+      }
+    } else {
+      var S1_des = tileID + '_' + params.training.S1.short +  '_' + trainingEndYear + '_T';
+      var S1_Output = params.wd + 'training/' + S1_des;
+      
+      try{
+        ee.data.getAsset(S1_Output);
+        print('Already exists: ' + S1_des);
+      } catch(err) {
+        
+        var S1_Record = ee.Image(0).rename('record').selfMask()
+                          .set({tile: tileID, sensor: 'Sentinel-1', short: params.training.S1.short})
+                          .set({horizontal: h, vertical: v})
+                          .set({harmonics: params.training.S1.harmonics})
+                          .set({start: params.period.training.start, end: params.period.training.end})
+                          .set(extraInfo).set({endYear: parseInt(trainingEndYear)})
+                          .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+                          .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+                          .set({'system:index': S1_des});
+        genRecord(S1_Record, S1_des, S1_Output);
+
+        var S1_Training = runTraining(region, params, 'Sentinel-1', params.training.S1.band, params.training.S1.harmonics)
+                            .updateMask(params.forestMask);
+        var S1_ccdIMG = utNRT.getCCDImage(S1_Training, params.training.S1.band, params.training.S1.harmonics)
+                .set({tile: tileID, sensor: 'Sentinel-1', short: params.training.S1.short})
+                .set({horizontal: h, vertical: v})
+                .set({harmonics: params.training.S1.harmonics})
+                .set({start: params.period.training.start, end: params.period.training.end})
+                .set(extraInfo).set({endYear: parseInt(trainingEndYear)})
+                .set({'system:time_start': ee.Date(params.period.training.start).millis()})
+                .set({'system:time_end': ee.Date(params.period.training.end).millis()})
+                .set({'system:index': S1_des});
+
+        saveTrainingToCloud(S1_ccdIMG, S1_folder, S1_des, region, params.training.S1.res, params.bucket);
+      }
+    }
+  }
+};
+  
+var runRegion = function(region, params) {
+  var tiles = params.grid.filterBounds(region);
+  var tiles2 = tiles.toList(maxTile);
+  var nTile = tiles.size().getInfo();
+  for (var i = 0; i < nTile; i++) {
+    var tile = ee.Feature(tiles2.get(i));
+    var h = tile.getNumber('horizontal').getInfo();
+    var v = tile.getNumber('vertical').getInfo();
+    var geometry = tile.geometry();
+    runTile(geometry, params, h, v);
+  }
+};
+
+var runSingleTile = function(h, v, params) {
+  var tile = params.grid.filter(ee.Filter.eq('horizontal', h))
+                        .filter(ee.Filter.eq('vertical', v))
+                        .first();
+  var geometry = tile.geometry();
+  runTile(geometry, params, h, v);
+};
+
+// ---------------------------------------------------------------
+// Run:
+//runRegion(params.area, params);
+//runTile(params.area, params, 1, 1);
+//runSingleTile(48, 25, params);
+
+// ---------------------------------------------------------------
+// Exports:
+exports = {
+  runRegion: runRegion,
+  runTile: runTile,
+  runSingleTile: runSingleTile,
+};
+
+// End

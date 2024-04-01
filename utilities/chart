@@ -1,0 +1,326 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Utilities for ploting time series
+
+// ---------------------------------------------------------------
+var utCommon = require('users/xjtang/FNRT:utilities/common');
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+
+  // generate a header list
+var genSegList = function() {
+  var segList = ['dateString', 'train', 'monitor'];
+  segList.push('h0');
+  segList.push('fit');
+  return segList;
+};
+
+  // get CCD time series
+var getTimeSeries = function(train, monitor, ccd, geometry, band, res, minRMSE, params) {
+  if (!(ccd.bandNames().size().getInfo())) {
+    ccd = utNRT.training(train, band);
+  }
+  
+  if (params.cloud) {
+    var coefBands = ccd.select('.*coef.*').toArray().rename(band + '_coefs');
+    var rmseBand = ccd.select('.*RMSE.*').toArray().rename(band + '_rmse');
+    ccd = coefBands.addBands(rmseBand);
+  }
+  //print(ccd);
+  
+  var proj = ee.Projection(params.proj).atScale(res);
+  var ccdFits = ccd.reduceRegion({
+    reducer: ee.Reducer.first(), 
+    geometry: geometry, 
+    crs: proj});
+  //print(ccdFits);
+  if (params.cloud) {
+    var coef = ccdFits.getArray(band + '_coefs');
+  } else {
+    var coef = ccdFits.getArray(band + '_coefs').project([1]);
+  }
+  
+  var rmse = ee.Algorithms.If(
+                ccdFits.getArray(band + '_rmse').get([0]).gte(minRMSE), 
+                ccdFits.getArray(band + '_rmse').get([0]),
+                minRMSE);
+  //print(coef);
+  //print(rmse);
+  
+  var produceTimeSeries = function(collection, geometry, band) {
+    if (params.plot.padding) {
+      collection = collection.sort('system:time_start');
+      var first = collection.first();
+      var last = collection.sort('system:time_start', false).first();
+      var fakeDates = ee.List.sequence(first.date().get('year'), last.date().get('year'), params.plot.padding)
+        .map(function(t) {
+        var fYear = ee.Number(t);
+        var year = fYear.floor();
+        return  ee.Date.fromYMD(year, 1, 1).advance(fYear.subtract(year), 'year')});
+      fakeDates = fakeDates.map(function(d) { 
+        return ee.Image().rename(band).set('system:time_start', ee.Date(d).millis())});
+      collection = collection.merge(fakeDates);
+    }    
+    collection = collection.sort('system:time_start');
+
+    var timeSeries = collection.map(function(img) {
+      var time = utCommon.convertDateFormat(img.date(), params.plot.dateFormat);
+      var value = img.select(band).reduceRegion({
+        reducer: ee.Reducer.first(), 
+        geometry: geometry,
+        crs: proj
+      }).getNumber(band);
+      var fit = harmonicFit(time, ee.Array(coef), params.plot.dateFormat);
+      var residual = ee.Algorithms.If(value, fit.subtract(value), value);
+      return ee.Feature(geometry).set({
+        train: value,
+        x: value,
+        fitTime: time,
+        fit: fit,
+        residual: residual,
+        dateString: img.date().format('YYYY-MM-dd'),
+        trainFitTime: time,
+        rmse: rmse,
+        h0: fit
+      });
+    });
+    return timeSeries;
+  };
+  
+  var produceMonitorData = function(collection, geometry, band) {
+    if (params.plot.padding) {
+      collection = collection.sort('system:time_start');
+      var first = collection.first();
+      var last = collection.sort('system:time_start', false).first();
+      var fakeDates = ee.List.sequence(first.date().get('year'), last.date().get('year'), params.plot.padding)
+        .map(function(t) {
+        var fYear = ee.Number(t);
+        var year = fYear.floor();
+        return  ee.Date.fromYMD(year, 1, 1).advance(fYear.subtract(year), 'year')});
+      fakeDates = fakeDates.map(function(d) { 
+        return ee.Image().rename(band).set('system:time_start', ee.Date(d).millis())});
+      collection = collection.merge(fakeDates);
+    }    
+    collection = collection.sort('system:time_start');
+    return collection.map(function(img) {
+      var time = utCommon.convertDateFormat(img.date(), params.plot.dateFormat);
+      var value = img.select(band).reduceRegion({
+        reducer: ee.Reducer.first(), 
+        geometry: geometry,
+        crs: proj
+      }).getNumber(band);
+      var fit = harmonicFit(time, ee.Array(coef), params.plot.dateFormat);
+      var residual = ee.Algorithms.If(value, fit.subtract(value), value);
+      return ee.Feature(geometry).set({
+        monitor: value,
+        fitTime: time,
+        fit: fit,
+        x: value,
+        residual: residual,
+        dateString: img.date().format('YYYY-MM-dd'),
+        monitorFitTime: time,
+        rmse: rmse,
+        h0: fit
+      });
+    });
+  };
+  
+  return produceTimeSeries(train, geometry, band)
+            .merge(produceMonitorData(monitor, geometry, band));
+};
+
+  // convert CCD time series to a table for charting
+var getCCDTable = function(ccdTS, segList) {
+  var listLen = segList.length;
+  return ccdTS.reduceColumns(ee.Reducer.toList(listLen, listLen), segList).get('list');
+};
+
+  // make a CCD chart
+var getCCDChart = function(table, sensor, band, lat, lon) {
+  function formatTable(table) {
+    var cols = [{id: 'A', label: 'Date', type: 'date'},
+            {id: 'B', label: 'Training', type: 'number'},
+            {id: 'C', label: 'Monitoring', type: 'number'},
+            {id: 'D', label: 'Model', type: 'number'}];
+
+    var values = table.map(function(list) {
+      return {c: list.map(function(item, index) {
+        return {"v": index == 0 ? new Date(item): item};
+      })};
+    });
+    return {cols: cols, rows: values};
+  }
+  
+  var formatted = formatTable(table);
+
+  var chart = ui.Chart(formatted, 'LineChart', {
+        title: 'Pixel located at ' + lat.toFixed(3) + ', ' + lon.toFixed(3),
+        pointSize: 0,
+        series: {
+          0: { pointSize: 1.8, lineWidth: 0},
+          1: { pointSize: 1.8, lineWidth: 0}
+        },
+        vAxis: {
+          title: sensor + ': ' + band,
+          viewWindowMode: 'explicit'
+        },
+        height: '300px',
+        stretch: 'horizontal'
+  });
+  return chart;
+};
+
+  // harmonic fitting
+var harmonicFit = function(t, coef, dateFormat) {
+  var PI2 = 2.0 * Math.PI;
+  var OMEGAS = [PI2 / 365.25, PI2, PI2 / (1000 * 60 * 60 * 24 * 365.25)];
+  var omega = OMEGAS[dateFormat];
+  return coef.get([0])
+    .add(coef.get([1]).multiply(t))
+    .add(coef.get([2]).multiply(t.multiply(omega).cos()))
+    .add(coef.get([3]).multiply(t.multiply(omega).sin()))
+    .add(coef.get([4]).multiply(t.multiply(omega * 2).cos()))
+    .add(coef.get([5]).multiply(t.multiply(omega * 2).sin()))
+    .add(coef.get([6]).multiply(t.multiply(omega * 3).cos()))
+    .add(coef.get([7]).multiply(t.multiply(omega * 3).sin()));
+};
+
+// ---------------------------------------------------------------
+// NRT Utilities
+  // calculate Z scores with baseline
+var getNRTTimeSeries = function(ts, params, sensorParams){
+  var call = function(x, threshold, direction) {
+    return ee.Algorithms.If(
+      direction,
+      ee.Algorithms.If(
+        ee.Number(direction).eq(1),
+        ee.Number(x).gt(threshold),
+        ee.Number(x).multiply(-1).gt(threshold)),
+      ee.Number(x).abs().gt(threshold));
+  };
+  
+  if (sensorParams.maxValue) {
+    return ts.map(function(x) {
+      var observation = x.get('x');
+      var fit = ee.Number(x.get('fit')).min(sensorParams.maxValue);
+      var residual = fit.subtract(observation);
+      var rmse = x.get('rmse');
+      var train = x.get('trainFitTime');
+      var score = ee.Number(ee.Algorithms.If(
+                    ee.Number(residual).divide(rmse).gt(params.monitor.maxZ),
+                    params.monitor.maxZ,
+                    ee.Number(residual).divide(rmse)
+                  ));
+      return ee.Algorithms.If(
+        train, 
+        x.set({scoreTrain: score}),
+        ee.Algorithms.If(
+          call(score, sensorParams.zThres, sensorParams.directional),
+          x.set({strike: score, score_monitor: score}),
+          x.set({ball: score, score_monitor: score})
+        )
+      );
+    });
+  } else {
+    return ts.map(function(x) {
+      var observation = x.get('x');
+      var residual = x.get('residual');
+      var rmse = x.get('rmse');
+      var train = x.get('trainFitTime');
+      var score = ee.Number(ee.Algorithms.If(
+                    ee.Number(residual).divide(rmse).gt(params.monitor.maxZ),
+                    params.monitor.maxZ,
+                    ee.Number(residual).divide(rmse)
+                  ));
+      return ee.Algorithms.If(
+        train, 
+        x.set({scoreTrain: score}),
+        ee.Algorithms.If(
+          call(score, sensorParams.zThres, sensorParams.directional),
+          x.set({strike: score, score_monitor: score}),
+          x.set({ball: score, score_monitor: score})
+        )
+      );
+    });
+  }
+  
+  return scores;
+};
+
+  // near real time monitoring
+var getNRTMonitor = function(ts, params) {
+  var flag = ee.Number(ee.List(ts.iterate(function(x, flags){
+    flags = ee.List(flags);
+    return ee.Algorithms.If(
+      ee.Number(flags.get(-1)).gt(1),
+      flags,
+      ee.Algorithms.If(
+        x.get('strike'),
+        ee.Algorithms.If(
+          flags.slice(1).add(1).frequency(1).gte(params.strikeOut),
+          flags.add(x.get('fitTime')),
+          flags.slice(1).add(1)
+        ),
+        flags.slice(1).add(0)
+      )
+    );
+  }, ee.List.repeat(0, params.monitorWindow))).get(-1));
+  
+  return ee.Algorithms.If(
+    flag.gt(0),
+    ts.map(function(x){
+      var date = x.get('fitTime');
+      var z = x.get('strike');
+      return ee.Algorithms.If(
+        flag.eq(date),
+        x.set({strikeOut: z, strike: null}),
+        x
+      );
+    }),
+    ts
+  );
+};
+
+  // make a NRT chart
+var getNRTChart = function(table, band, lat, lon) {
+  function formatTable(table) {
+    var cols = [{id: 'A', label: 'Date', type: 'date'},
+            {id: 'B', label: 'Training', type: 'number'},
+            {id: 'C', label: 'Ball', type: 'number'},
+            {id: 'D', label: 'Strike', type: 'number'},
+            {id: 'E', label: 'StrikeOut', type: 'number'}];
+    var values = table.map(function(list) {
+      return {c: list.map(function(item, index) {
+        return {"v": index == 0 ? new Date(item): item};
+      })};
+    });
+    return {cols: cols, rows: values};
+  }
+  
+  var formatted = formatTable(table);
+  var chart = ui.Chart(formatted, 'ScatterChart', {
+        title: 'Pixel located at ' + lat.toFixed(3) + ', ' + lon.toFixed(3),
+        pointSize: 1.8,
+        vAxis: {
+          title: 'Change Score (' + band + ')',
+          viewWindowMode: 'explicit',
+        },
+        height: '300px',
+        stretch: 'horizontal'
+  });
+  return chart;
+};
+
+// ---------------------------------------------------------------
+// Exports
+exports = {
+  getTimeSeries: getTimeSeries,
+  getNRTTimeSeries: getNRTTimeSeries,
+  getNRTMonitor: getNRTMonitor,
+  genSegList: genSegList,
+  getCCDTable: getCCDTable,
+  getCCDChart: getCCDChart,
+  getNRTChart: getNRTChart,
+};
+
+// End

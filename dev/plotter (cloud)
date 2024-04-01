@@ -1,0 +1,435 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Plol NRT Results of Individual Pixels (reading from Google Cloud)
+
+// ---------------------------------------------------------------
+// Imports and predefined variables:
+var listener = 0;
+var utCommon = require('users/xjtang/FNRT:utilities/common');
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:utilities/parameters');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var utChart = require('users/xjtang/FNRT:utilities/chart');
+var params = utParams.params;
+
+var year = params.period.monitor.end.slice(0, 4);
+var chartPeriod = {
+  start: year + '-01-01',
+  end: year + '-12-31'
+};
+
+// ---------------------------------------------------------------
+// Manual Override:
+
+//params.preprocess.S1.rawPower = true;
+//params.training.S1.band = 'VH';
+
+
+var createPanel = function(params) {
+  
+  // ---------------------------------------------------------------
+  // Main functions:
+  var getTrainingFromCloud = function(pixel, sensor, orbit) {
+    var trainingEndYear = params.period.training.end.slice(0, 4);
+    var tile = params.grid.filterBounds(pixel).first();
+    var h = tile.getNumber('horizontal').getInfo();
+    var v = tile.getNumber('vertical').getInfo();
+    var tileID = 'h' + ('000' + h).substr(-3) + 'v' + ('000' + v).substr(-3);
+    var path = 'gs://' + params.bucket + '/training/' + sensor + '/' + tileID + '_' + 
+                sensor + '_' + trainingEndYear +orbit + '_T.tif';
+    //print(path);
+    return ee.Image.loadGeoTIFF(path);
+  };
+  
+    // run and plot CCD for a pixel
+  var chartCCD = function(coords) {
+    resetTSPanel();
+    var sensor = ccdSelect.getValue();
+    //tsPanel.add(ui.Label('Running CCD on ' + sensor + ' data...'));
+    var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
+    
+    var genCCDChart = function(ccdTS, sensor, band, res, vis) {
+      utCommon.addPixel(mapPanel, coords, res/222640, '0000FF', 'Clicked');
+      var segList = utChart.genSegList();
+      var ccdTable = utChart.getCCDTable(ccdTS, segList);
+      //print(ccdTable);
+      ccdTable.evaluate(function(t, e) {
+        var chart = utChart.getCCDChart(t, sensor, band, coords.lat, coords.lon);
+        chart.onClick(
+          function(date) {
+            if (date === null) {
+              utCommon.removeLayer(mapPanel, '_');
+            } else {
+              var img = utInput.getImage(pixel, date, sensor);
+              mapPanel.addLayer(img, vis, img.get('system:index').getInfo());
+              utCommon.removeLayer(mapPanel, 'Clicked');
+              utCommon.addPixel(mapPanel, coords, res/222640, '0000FF', 'Clicked');
+            }
+          }
+        );
+        tsPanel.add(chart);
+      });
+    };
+    
+    if (sensor == 'Landsat') {
+      var trainDataLST = utInput.getData(pixel, params, params.period.training, 'Landsat', false);
+      var monitorDataLST = utInput.getData(pixel, params, chartPeriod, 'Landsat', true);
+      //var modelLST = ccd.filter(ee.Filter.eq('sensor', 'Landsat')).filterBounds(pixel).mosaic();
+      var modelLST = getTrainingFromCloud(pixel, params.training.LST.short, '');
+      //print(modelLST);
+      var ccdTSLST = utChart.getTimeSeries(trainDataLST, monitorDataLST, modelLST, pixel, params.training.LST.band, 
+                                            params.training.LST.res, params.monitor.LST.minRMSE, params);
+      //print(ccdTSLST);
+      genCCDChart(ccdTSLST, 'Landsat', params.training.LST.band, params.training.LST.res, params.visual.LST);
+    } else if (sensor == 'Sentinel-2') {
+      var trainDataS2 = utInput.getData(pixel, params, params.period.training, 'Sentinel-2', false);
+      var monitorDataS2 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-2', false);
+      //var modelS2 = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-2')).filterBounds(pixel).mosaic();
+      var modelS2 = getTrainingFromCloud(pixel, params.training.S2.short, '');
+      var ccdTSS2 = utChart.getTimeSeries(trainDataS2, monitorDataS2, modelS2, pixel, params.training.S2.band, 
+                                          params.training.S2.res, params.monitor.S2.minRMSE, params);
+      //print(ccdTSS2);
+      genCCDChart(ccdTSS2, 'Sentinel-2', params.training.S2.band, params.training.S2.res, params.visual.S2);
+    } else if (sensor == 'Sentinel-1') {
+      var trainDataS1 = utInput.getData(pixel, params, params.period.training, 'Sentinel-1', false);
+      //print(trainDataS1);
+      var monitorDataS1 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-1', false);
+      //print(monitorDataS1);
+      //var modelS1 = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1')).filterBounds(pixel);
+      //print(modelS1);
+      if (params.preprocess.S1.splitOrbit){
+        var orbitList = ee.Dictionary(trainDataS1.aggregate_histogram('relativeOrbitNumber_start')).keys();
+        var nOrbit = orbitList.length().getInfo();
+        for (var j = 0; j < nOrbit; j++) {
+          var orbit = ee.Number.parse(orbitList.get(j));
+          //print(orbit);
+          var trainDataOrbit = trainDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          //print(trainDataOrbit);
+          var monitorDataOrbit = monitorDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          //print(monitorDataOrbit);
+          //var modelOrbit = modelS1.filter(ee.Filter.eq('orbit', orbit)).mosaic();
+          var orbitCode = '_OB' + orbit.getInfo();
+          var modelOrbit = getTrainingFromCloud(pixel, params.training.S1.short, orbitCode);
+          //print(modelOrbit);
+          var ccdTSOrbit = utChart.getTimeSeries(trainDataOrbit, monitorDataOrbit, modelOrbit, pixel, 
+                                                  params.training.S1.band, params.training.S1.res, 
+                                                  params.monitor.S1.minRMSE, params);
+          //print(ccdTSOrbit);
+          var orbitID = params.training.S1.band + '(Orbit: ' + orbit.getInfo() + ')';
+          genCCDChart(ccdTSOrbit, 'Sentinel-1', orbitID, params.training.S1.res, params.visual.S1);
+        }
+      } else {
+        var modelS1 = getTrainingFromCloud(pixel, params.training.S1.short, '');
+        var ccdTSS1 = utChart.getTimeSeries(trainDataS1, monitorDataS1, modelS1, pixel, params.training.S1.band, 
+                                            params.training.S1.res, params.monitor.S1.minRMSE, params);
+        genCCDChart(ccdTSS1, 'Sentinel-1', params.training.S1.band, params.training.S1.res, params.visual.S1);
+      }
+    }
+  };
+  
+    // run and plot NRT for a pixel (separate sensors)
+  var chartNRT = function(coords) {
+    resetTSPanel();
+    //tsPanel.add(ui.Label('Running NRT separately...'));
+    var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
+    utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
+  
+    var genNRTChart = function(nrtTS, sensor, band, vis) {
+      if (nrtTS.size().gt(0).getInfo()) {
+        var nrtMonitor = ee.FeatureCollection(utChart.getNRTMonitor(nrtTS.sort('fitTime'), params.monitor));
+        //print(nrtMonitor);
+        var nrtList = ["dateString", "scoreTrain", "ball", 'strike', 'strikeOut'];
+        var nrtTable = utChart.getCCDTable(nrtMonitor, nrtList);
+        nrtTable.evaluate(function(t, e) {
+          var chart = utChart.getNRTChart(t, sensor + ' / ' + band, coords.lat, coords.lon);
+          chart.onClick(
+            function(date) {
+              if (date === null) {
+                utCommon.removeLayer(mapPanel, '_');
+              } else {
+                var img = utInput.getImage(pixel, date, sensor);
+                mapPanel.addLayer(img, vis, img.get('system:index').getInfo());
+                utCommon.removeLayer(mapPanel, 'Clicked');
+                utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
+              }
+            }
+          );
+          tsPanel.add(chart);
+        });
+      } else {
+        tsPanel.add(ui.Label('No sensor was selected.'));
+      }
+    };
+  
+    if (LSTCheck.getValue()) {
+      var trainDataLST = utInput.getData(pixel, params, params.period.training, 'Landsat', false);
+      var monitorDataLST = utInput.getData(pixel, params, chartPeriod, 'Landsat', true);
+      var modelLST = getTrainingFromCloud(pixel, params.training.LST.short, '');
+      var ccdTSLST = utChart.getTimeSeries(trainDataLST, monitorDataLST, modelLST, pixel, params.training.LST.band, 
+                                        params.training.LST.res, params.monitor.LST.minRMSE, params)
+                            .filterMetadata('x', 'not_equals', null);
+      var nrtTSLST = utChart.getNRTTimeSeries(ccdTSLST, params, params.monitor.LST);
+      genNRTChart(nrtTSLST, 'Landsat', params.training.LST.band, params.visual.LST);
+    }
+  
+    if (S2Check.getValue()) {
+      var trainDataS2 = utInput.getData(pixel, params, params.period.training, 'Sentinel-2', false);
+      var monitorDataS2 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-2', false);
+      var modelS2 = getTrainingFromCloud(pixel, params.training.S2.short, '');
+      var ccdTSS2 = utChart.getTimeSeries(trainDataS2, monitorDataS2, modelS2, pixel, params.training.S2.band, 
+                                        params.training.S2.res, params.monitor.S2.minRMSE, params)
+                            .filterMetadata('x', 'not_equals', null);
+      var nrtTSS2 = utChart.getNRTTimeSeries(ccdTSS2, params, params.monitor.S2);
+      genNRTChart(nrtTSS2, 'Sentinel-2', params.training.S2.band, params.visual.S2);
+    }
+    
+    if (S1Check.getValue()) {
+      var trainDataS1 = utInput.getData(pixel, params, params.period.training, 'Sentinel-1', false);
+      var monitorDataS1 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-1', false);
+      if (params.preprocess.S1.splitOrbit){
+        var orbitList = ee.Dictionary(trainDataS1.aggregate_histogram('relativeOrbitNumber_start')).keys();
+        var nOrbit = orbitList.length().getInfo();
+        for (var j = 0; j < nOrbit; j++) {
+          var orbit = ee.Number.parse(orbitList.get(j));
+          var trainDataOrbit = trainDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          var monitorDataOrbit = monitorDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          var orbitCode = '_OB' + orbit.getInfo();
+          var modelOrbit = getTrainingFromCloud(pixel, params.training.S1.short, orbitCode);
+          var ccdTSOrbit = utChart.getTimeSeries(trainDataOrbit, monitorDataOrbit, modelOrbit, pixel, 
+                                                  params.training.S1.band, params.training.S1.res, 
+                                                  params.monitor.S1.minRMSE, params)
+                                  .filterMetadata('x', 'not_equals', null);
+          var nrtTSOrbit = utChart.getNRTTimeSeries(ccdTSOrbit, params, params.monitor.S1);
+          var orbitID = params.training.S1.band + ' / ' + orbit.getInfo();
+          genNRTChart(nrtTSOrbit, 'Sentinel-1', orbitID, params.visual.S1);
+        }
+      } else {
+        var modelS1 = getTrainingFromCloud(pixel, params.training.S1.short, '');
+        var ccdTSS1 = utChart.getTimeSeries(trainDataS1, monitorDataS1, modelS1, pixel, params.training.S1.band, 
+                                            params.training.S1.res, params.monitor.S1.minRMSE, params)
+                              .filterMetadata('x', 'not_equals', null);
+        var nrtTSS1 = utChart.getNRTTimeSeries(ccdTSS1, params, params.monitor.S1);
+        genNRTChart(nrtTSS1, 'Sentinel-1', params.training.S1.band, params.visual.S1);
+      }  
+    }
+  };
+  
+    // run and plot NRT for a pixel (merged)
+  var chartNRT2 = function(coords) {
+    var addNRTImage = function(pixel, date, sensor, vis) {
+      var img = utInput.getImage(pixel, date, sensor);
+      if (img != null) {
+        mapPanel.addLayer(img, vis, img.get('system:index').getInfo());
+      } 
+    };
+    
+    resetTSPanel();
+    //tsPanel.add(ui.Label('Running NRT merged...'));
+    var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
+    utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
+    var nrtTS = ee.FeatureCollection([]);
+  
+    if (LSTCheck.getValue()) {
+      var trainDataLST = utInput.getData(pixel, params, params.period.training, 'Landsat', false);
+      var monitorDataLST = utInput.getData(pixel, params, chartPeriod, 'Landsat', true);
+      var modelLST = getTrainingFromCloud(pixel, params.training.LST.short, '');
+      var ccdTSLST = utChart.getTimeSeries(trainDataLST, monitorDataLST, modelLST, pixel, params.training.LST.band, 
+                                        params.training.LST.res, params.monitor.LST.minRMSE, params)
+                            .filterMetadata('x', 'not_equals', null);
+      nrtTS = nrtTS.merge(utChart.getNRTTimeSeries(ccdTSLST, params, params.monitor.LST));
+    }
+  
+    if (S2Check.getValue()) {
+      var trainDataS2 = utInput.getData(pixel, params, params.period.training, 'Sentinel-2', false);
+      var monitorDataS2 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-2', false);
+      var modelS2 = getTrainingFromCloud(pixel, params.training.S2.short, '');
+      var ccdTSS2 = utChart.getTimeSeries(trainDataS2, monitorDataS2, modelS2, pixel, params.training.S2.band, 
+                                        params.training.S2.res, params.monitor.S2.minRMSE, params)
+                            .filterMetadata('x', 'not_equals', null);
+      nrtTS = nrtTS.merge(utChart.getNRTTimeSeries(ccdTSS2, params, params.monitor.S2));
+    }
+    
+    if (S1Check.getValue()) {
+      var trainDataS1 = utInput.getData(pixel, params, params.period.training, 'Sentinel-1', false);
+      var monitorDataS1 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-1', false);
+      if (params.preprocess.S1.splitOrbit){
+        var orbitList = ee.Dictionary(trainDataS1.aggregate_histogram('relativeOrbitNumber_start')).keys();
+        var nOrbit = orbitList.length().getInfo();
+        for (var j = 0; j < nOrbit; j++) {
+          var orbit = ee.Number.parse(orbitList.get(j));
+          var trainDataOrbit = trainDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          var monitorDataOrbit = monitorDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          var orbitCode = '_OB' + orbit.getInfo();
+          var modelOrbit = getTrainingFromCloud(pixel, params.training.S1.short, orbitCode);
+          var ccdTSOrbit = utChart.getTimeSeries(trainDataOrbit, monitorDataOrbit, modelOrbit, pixel, 
+                                                  params.training.S1.band, params.training.S1.res, 
+                                                  params.monitor.S1.minRMSE, params)
+                                  .filterMetadata('x', 'not_equals', null);
+          nrtTS = nrtTS.merge(utChart.getNRTTimeSeries(ccdTSOrbit, params, params.monitor.S1));
+        }
+      } else {
+        var modelS1 = getTrainingFromCloud(pixel, params.training.S1.short, '');
+        var ccdTSS1 = utChart.getTimeSeries(trainDataS1, monitorDataS1, modelS1, pixel, params.training.S1.band, 
+                                            params.training.S1.res, params.monitor.S1.minRMSE, params)
+                              .filterMetadata('x', 'not_equals', null);
+        nrtTS = nrtTS.merge(utChart.getNRTTimeSeries(ccdTSS1, params, params.monitor.S1));
+      }  
+    }
+    
+    if (nrtTS.size().gt(0).getInfo()) {
+      var nrtMonitor = ee.FeatureCollection(utChart.getNRTMonitor(nrtTS.sort('fitTime'), params.monitor));
+      //print(nrtMonitor);
+      var nrtList = ["dateString", "scoreTrain", "ball", 'strike', 'strikeOut'];
+      var nrtTable = utChart.getCCDTable(nrtMonitor, nrtList);
+      nrtTable.evaluate(function(t, e) {
+        var chart = utChart.getNRTChart(t, 'Combined', coords.lat, coords.lon);
+        chart.onClick(
+          function(date) {
+            if (date === null) {
+              utCommon.removeLayer(mapPanel, '_');
+            } else {
+              if (S2Check.getValue()) {addNRTImage(pixel, date, 'Sentinel-2', params.visual.S2)}
+              if (S1Check.getValue()) {addNRTImage(pixel, date, 'Sentinel-1', params.visual.S1)}
+              if (LSTCheck.getValue()) {addNRTImage(pixel, date, 'Landsat', params.visual.LST)}
+              utCommon.removeLayer(mapPanel, 'Clicked');
+              utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
+            }
+          }
+        );
+        tsPanel.add(chart);
+      });
+    } else {
+      tsPanel.add(ui.Label('No sensor was selected.'));
+    }
+  };
+  
+    // reset the time series panel
+  var resetTSPanel = function() {
+    tsPanel.clear();
+    utCommon.removeLayer(mapPanel, '_');
+    utCommon.removeLayer(mapPanel, 'Clicked');
+  };
+  
+    // reset all
+  var resetAll = function() {
+    resetTSPanel();
+    utCommon.removeLayer(mapPanel, 'Alert');
+  };
+  
+  // ---------------------------------------------------------------
+  // UIs:
+    // menu panel
+  var ccdButton = ui.Button('CCD');
+  var nrtButton = ui.Button('NRT');
+  var loadButton = ui.Button('Load');
+  var resetButton = ui.Button('Reset');
+  var menuSet = ui.Panel([ccdButton, nrtButton, loadButton, resetButton], 
+                          ui.Panel.Layout.Flow('vertical'));
+  var ccdSelect = ui.Select(['Landsat', 'Sentinel-2', 'Sentinel-1'], 'Select sensor for CCD.', 'Landsat');
+  var LSTCheck = ui.Checkbox('Landsat', true);
+  var S2Check = ui.Checkbox('Sentinel-2', true);
+  var S1Check = ui.Checkbox('Sentinel-1', false);
+  var separateCheck = ui.Checkbox('Separate NRT Plot', true);
+  var selectSet = ui.Panel([ccdSelect, LSTCheck, S2Check, S1Check, separateCheck], 
+                          ui.Panel.Layout.Flow('vertical'));
+  var menuUISet = ui.Panel([menuSet, selectSet], ui.Panel.Layout.Flow('horizontal'));
+  var menuPanel = ui.Panel({
+    widgets: [ui.Label('Menu'), menuUISet],
+    layout: ui.Panel.Layout.Flow('vertical'),
+    style: {width: '20%'}});
+  
+    // ts panel
+  var tsPanel = ui.Panel({
+    widgets: [],
+    style: {position: 'bottom-right', width: '80%'}});
+  
+    // ui panel
+  var controlPanel = ui.Panel({
+    style: {height: '30%'},
+    widgets:[ui.SplitPanel(tsPanel, menuPanel, 'horizontal', false)]});
+  
+    // map panel
+  var mapPanel = ui.Map({style: {cursor: 'crosshair'}});
+  var mapPanel2 = ui.Panel({
+    style: {height: '70%'},
+    widgets:[mapPanel]});
+    
+  var uiPanel = ui.SplitPanel(mapPanel2, controlPanel, 'vertical');
+    
+  // ---------------------------------------------------------------
+  // Runtime functions:
+  loadButton.onClick(function() {
+    utCommon.removeLayer(mapPanel, 'Alert');
+    var alerts = ee.ImageCollection(params.wd + 'alerts').mosaic();
+    mapPanel.addLayer(alerts.select('Filtered'), params.visual.alerts, 'Alerts (All)', true);
+    mapPanel.addLayer(alerts, {}, 'Alerts (Full Image)', false);
+    mapPanel.addLayer(alerts.select('Deforestaion'), params.visual.alerts, 'Possible Deforestation (Beta)', false);
+    mapPanel.addLayer(alerts.select('Recovered'), params.visual.alerts, 'Already Recovered (Beta)', false);
+    if (params.driver.size) {
+      mapPanel.addLayer(alerts.select('Natural'), params.visual.alerts, 'Possible Natural (Beta)', false);
+      mapPanel.addLayer(alerts.select('Anthropogenic'), params.visual.alerts, 'Possible Anthropogenic (Beta)', false);
+    }
+  });
+  
+  ccdButton.onClick(function() {
+    if (listener == 1) {
+      ccdButton.setLabel('CCD');
+      listener = 0;
+    } else {
+      nrtButton.setLabel('NRT');
+      ccdButton.setLabel('Cancel');
+      listener = 1;
+    }
+  });
+  
+  nrtButton.onClick(function() {
+    if (listener == 2) {
+      nrtButton.setLabel('NRT');
+      listener = 0;
+    } else {
+      nrtButton.setLabel('Cancel');
+      ccdButton.setLabel('CCD');
+      listener = 2;
+    }
+  });
+  
+  resetButton.onClick(function() {
+    resetAll();
+  });
+  
+  mapPanel.onClick(function(coords) {
+    if (listener == 1) {
+      chartCCD(coords);
+    } else if (listener == 2) {
+      if (separateCheck.getValue()) {
+        chartNRT(coords);
+      } else {
+        chartNRT2(coords);
+      }
+    }
+  });
+
+  return uiPanel;
+};
+
+// ---------------------------------------------------------------
+// Initialization:
+//var uiPanel = createPanel(params);
+//ui.root.clear();
+//ui.root.add(uiPanel);
+
+//var mapPanel = uiPanel.getFirstPanel().widgets().get(0);
+//mapPanel.addLayer(params.forestMask, params.visual.mask, 'Forest Mask', false);
+//mapPanel.addLayer(params.area, {color: 'red'}, 'Study Area', false);
+//mapPanel.centerObject(params.area, 6);
+//mapPanel.setOptions('SATELLITE');
+
+// ---------------------------------------------------------------
+// Exports:
+exports = {
+  createPanel: createPanel
+
+};
+
+// End

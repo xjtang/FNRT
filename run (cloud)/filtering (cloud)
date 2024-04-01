@@ -1,0 +1,144 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Filtering Results (reading from Google Cloud)
+
+// ---------------------------------------------------------------
+// Imports and Parameters:
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:projects/westafrica/params');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var params = utParams.params;
+var maxTile = 1000;
+var maxSize = 1024;
+var extraInfo = {
+  version: '0.1',
+  user: 'xjtang'
+};
+
+// ---------------------------------------------------------------
+// Functions:
+var save = function(img, des, output, region, res, crs) {
+  Export.image.toAsset({
+        image: img,
+        scale: res,
+        description: des,
+        assetId: output,
+        crs: crs,
+        region: region,
+        maxPixels: 1e13,
+        pyramidingPolicy: {'.default': 'mean'}
+  });
+};
+
+var runTile = function(region, params, h, v) {
+  var tileID = 'h' + ('000' + h).substr(-3) + 'v' + ('000' + v).substr(-3);
+  var bucket = 'gs://' + params.bucket + '/cache/';
+
+  var cache = ee.ImageCollection(params.wd + 'cache')
+                .filter(ee.Filter.eq('horizontal', h))
+                .filter(ee.Filter.eq('vertical', v))
+                .sort('end', false);
+  //print(cache);
+
+  if (cache.size().getInfo() > 0){
+    var lastCacheDate = cache.first().get('end').getInfo().replace(/-/g, '');
+    var cache_path = bucket + tileID + '_' + lastCacheDate + '_C.tif';
+    //print(cache_path);
+    
+    var lastCache = ee.ImageCollection(ee.Image.loadGeoTIFF(cache_path)).mosaic();
+    var recover = lastCache.select('Recover');
+
+    if (params.monitor.recover) {
+      var date = lastCache.select('DoC').where(lastCache, 0).rename('Date');
+    } else {
+      var date = lastCache.select('DoC').rename('Date')
+    }
+  
+    var trainingEndYear = params.period.training.end.slice(0, 4);
+    var baseDate = trainingEndYear + '-01-01';  
+    var cutoff = ee.Number(ee.Date(params.period.alert).difference(ee.Date(baseDate), 'day'));
+    
+    date = date.subtract(cutoff).add(1).where(date.lt(cutoff), 0);
+    recover = recover.subtract(cutoff).add(1).where(recover.lt(cutoff), 0);
+    
+    var change = date.gt(0).selfMask();
+    var size = change.addBands(change).toInt().reduceConnectedComponents({
+                        reducer: ee.Reducer.sum(), 
+                        maxSize: maxSize
+                      }).rename('Size');
+    var alert = date.where(size.lt(params.monitor.minSize), 0).selfMask();
+    
+    var deforestation = alert.updateMask(recover.not()).rename('Deforestaion');
+    var recovered = alert.updateMask(recover).rename('Recovered');
+    if (params.driver.size) {
+      var natural = alert.where(size.lt(params.driver.size), 0).selfMask().rename('Natural');
+      var anthro = alert.updateMask(size.lt(params.driver.size)).rename('Anthropogenic');
+    } else {
+      var natural = alert.updateMask(size.gte(0)).rename('Natural');
+      var anthro = alert.updateMask(size.lt(0)).rename('Anthropogenic');
+    }
+
+    var alert_des = tileID + '_' + lastCacheDate + '_A';
+    var final = lastCache.addBands(date.selfMask().rename('Unfiltered'))
+                      .addBands(alert.rename('Filtered'))
+                      .addBands(size)
+                      .addBands(recover.rename('Recover'))
+                      .select(['Filtered', 'Unfiltered', 'Size', 'Recover'])
+                      .addBands(deforestation).addBands(recovered)
+                      .addBands(natural).addBands(anthro)
+                      .set({maxSize: maxSize})
+                      .set({minSize: params.monitor.minSize})
+                      .set({'system:index': alert_des})
+                      .set(extraInfo);
+                      
+    var alert_output = params.wd + 'alerts/' + alert_des;
+    
+    try{
+      ee.data.getAsset(alert_output);
+      print('Already exists: ' + alert_des);
+    } catch(err) {
+      save(final, alert_des, alert_output, region, params.monitor.res, params.proj);
+    }
+  
+  } else {
+    print('No cache found for h' + h + 'v' + v);
+  }
+};
+
+var runRegion = function(region, params) {
+  var tiles = params.grid.filterBounds(region);
+  var tiles2 = tiles.toList(maxTile);
+  var nTile = tiles.size().getInfo();
+  for (var i = 0; i < nTile; i++) {
+    var tile = ee.Feature(tiles2.get(i));
+    var h = tile.getNumber('horizontal').getInfo();
+    var v = tile.getNumber('vertical').getInfo();
+    var geometry = tile.geometry();
+    runTile(geometry, params, h, v);
+  }
+};
+
+var runSingleTile = function(h, v, params) {
+  var tile = params.grid.filter(ee.Filter.eq('horizontal', h))
+                        .filter(ee.Filter.eq('vertical', v))
+                        .first();
+  var geometry = tile.geometry();
+  runTile(geometry, params, h, v);
+};
+
+// ---------------------------------------------------------------
+// Run:
+//runRegion(params.area, params);
+//runTile(params.area, params, 1, 1);
+//runSingleTile(48, 25, params);
+
+// ---------------------------------------------------------------
+// Exports:
+exports = {
+  runRegion: runRegion,
+  runTile: runTile,
+  runSingleTile: runSingleTile,
+};
+
+// End

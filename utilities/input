@@ -1,0 +1,337 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Utilities for data input
+
+// ---------------------------------------------------------------
+// Common Input Utilities
+var ut = require('users/xjtang/FNRT:utilities/common');
+var slopeLib = require('users/xjtang/FNRT:utilities/s1_slope_correction');
+
+var unmixing = function(col, endMembers) { 
+  var gv = endMembers.gv;
+  var npv = endMembers.npv;
+  var soil = endMembers.soil;
+  var shade = endMembers.shade;
+  var cloud = endMembers.cloud;
+  var cfThreshold = endMembers.cfThreshold;
+  
+  return col.map(function(img){
+    var unmixed = img.select(['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2'])
+                    .unmix([gv, shade, npv, soil, cloud], true, true)
+                    .rename(['GV','Shade','NPV','Soil','Cloud']);
+    var maskCloud = unmixed.select('Cloud').lt(cfThreshold);
+    var maskShade = unmixed.select('Shade').lt(1);
+    
+    var NDFI = unmixed.expression(
+          '10000 * ((GV / (1 - SHADE)) - (NPV + SOIL)) / ((GV / (1 - SHADE)) + (NPV + SOIL))', 
+          {
+            'GV': unmixed.select('GV'),
+            'SHADE': unmixed.select('Shade'),
+            'NPV': unmixed.select('NPV'),
+            'SOIL': unmixed.select('Soil')
+          }).rename('NDFI');
+          
+    var maskNDFI = unmixed.expression(
+        '(GV / (1 - SHADE)) + (NPV + SOIL)', 
+        {
+          'GV': unmixed.select('GV'),
+          'SHADE': unmixed.select('Shade'),
+          'NPV': unmixed.select('NPV'),
+          'SOIL': unmixed.select('Soil')
+        }).gt(0);
+    return img.addBands(unmixed.select(['GV','Shade','NPV','Soil']).multiply(10000))
+              .addBands(NDFI).updateMask(maskCloud).updateMask(maskNDFI).updateMask(maskShade);
+  });
+};
+
+var getData = function(region, params, period, sensor, merge) {
+  if (sensor == 'Sentinel-2') {
+    return(getS2TS(region, params, period, merge));
+  } else if (sensor == 'Sentinel-1') {
+    var pickMaxOrbit = merge;
+    return(getS1TS(region, params, period));
+  } else {
+    return(getLandsatTS(region, params, period, merge));
+  }
+};
+
+var getImage = function(region, date, sensor) {
+  if (sensor == 'Sentinel-2') {
+    return(getS2Img(region, date, true));
+  } else if (sensor == 'Sentinel-1') {
+    return(getS1Img(region, date));
+  } else {
+    return(getLandsatImage(region, date, true));
+  }
+};
+
+// ---------------------------------------------------------------
+// Landsat Utilities
+var getLandsatImage = function(region, date, preprocessOnly) {
+  var collection5 = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2')
+                      .filterBounds(region).map(maskL457(true, preprocessOnly));
+  var collection7 = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2')
+                      .filterBounds(region).map(maskL457(true, preprocessOnly));
+  var collection8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+                      .filterBounds(region).map(maskL89(true, preprocessOnly));
+  var collection9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+                      .filterBounds(region).map(maskL89(true, preprocessOnly));
+  var col = collection5.merge(collection7).merge(collection8).merge(collection9);
+  var imDate = ee.Date(date);
+  var befDate = imDate.advance(-1, 'day');
+  var aftDate = imDate.advance(1, 'day');
+  var selectedImage = col.filterDate(befDate, aftDate);
+  //print(selectedImage);
+  if (selectedImage.size().gt(0).getInfo()) {
+    return selectedImage.mosaic().set({'system:index': 'LST_' + imDate.format('YYYY_MM_dd').getInfo()});
+  } else {
+    return null;
+  }
+};
+
+var getLandsatTS = function(region, params, period, merge) {
+  var collection5 = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2')
+      .filterDate(period.start, period.end)
+      .filterBounds(region).map(maskL457(params.training.LST.looseMasking, false));
+  var collection7 = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2')
+      .filterDate(period.start, period.end)
+      .filterBounds(region).map(maskL457(params.training.LST.looseMasking, false));
+  var collection8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+      .filterDate(period.start, period.end)
+      .filterBounds(region).map(maskL89(params.training.LST.looseMasking, false));
+  var collection9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+      .filterDate(period.start, period.end)
+      .filterBounds(region).map(maskL89(params.training.LST.looseMasking, false));
+  var col = collection5.merge(collection7).merge(collection8).merge(collection9);
+  var unmixed = ee.ImageCollection(unmixing(col, params.preprocess.endMembers));
+  if (merge) {
+    return ut.dailyComposite(ut.addImgDate(unmixed));
+  } else {
+    return unmixed;
+  }
+};
+
+var maskL457 = function(loose, preprocessOnly) {
+  return function(image) {
+    var bandList = ['SR_B1','SR_B2','SR_B3','SR_B4','SR_B5','SR_B7','ST_B6'];
+    var nameList = ['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2', 'TEMP'];
+    var subBand = ['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2'];
+  
+    var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2).multiply(10000);
+    var thermalBand = image.select('ST_B6').multiply(0.00341802).add(149.0);//.multiply(10000);
+    var scaled = opticalBands.addBands(thermalBand, null, true).select(bandList).rename(nameList);
+    
+    var validQA = [5440, 5504];
+    var validQA_w_snow = [5440, 5504, 13664];
+    var validQA_w_snow_cir_diCld = [5440, 5442, 5504, 5506, 13664];
+    
+    
+    var mask1 = ee.Image(image).select(['QA_PIXEL']).remap(validQA, ee.List.repeat(1, validQA.length), 0);
+    var mask2 = image.select('QA_RADSAT').eq(0);
+    var mask3 = scaled.select(subBand).reduce(ee.Reducer.min()).gt(0);
+    var mask4 = scaled.select(subBand).reduce(ee.Reducer.max()).lt(10000);
+    var mask5 = (image.select("SR_ATMOS_OPACITY").unmask(-1)).lt(300);
+
+    if (preprocessOnly) {
+      return ee.Image(image).addBands(scaled).select(subBand);
+    }
+    
+    if (loose) {
+      return ee.Image(image).addBands(scaled).updateMask(mask1.and(mask3).and(mask4))
+              .select(subBand);
+    } else {
+      return ee.Image(image).addBands(scaled)
+              .updateMask(mask1.and(mask2).and(mask3).and(mask4).and(mask5))
+              .select(subBand);
+    }
+  };
+};
+
+var maskL89 = function(loose, preprocessOnly) {
+  return function(image) {
+    var bandList = ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7', 'ST_B10'];
+    var nameList = ['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2', 'TEMP'];
+    var subBand = ['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2'];
+    
+    var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2).multiply(10000);
+    var thermalBand = image.select('ST_B10').multiply(0.00341802).add(149.0);//.multiply(10000);
+    var scaled = opticalBands.addBands(thermalBand, null, true).select(bandList).rename(nameList);
+    
+    var validTOA = [2, 4, 32, 66, 68, 96, 100, 130, 132, 160, 164, 64, 128];
+    var validQA = [21824, 21888, 21952]; // 21952 is not in the guide
+    var validQA_w_snow = [21824, 21888, 30048];
+    var validQA_w_snow_cir_diCld = [21824, 21888, 21826, 21890, 30048, 54596, 54852, 55052, 56856, 56984, 57240]; 
+  
+
+    var mask1 = ee.Image(image).select(['QA_PIXEL']).remap(validQA, ee.List.repeat(1, validQA.length), 0);
+    var mask2 = image.select('QA_RADSAT').eq(0);
+    var mask3 = scaled.select(subBand).reduce(ee.Reducer.min()).gt(0);
+    var mask4 = scaled.select(subBand).reduce(ee.Reducer.max()).lt(10000);
+    var mask5 = ee.Image(image).select(['SR_QA_AEROSOL']).remap(validTOA, ee.List.repeat(1, validTOA.length), 0);
+    
+    if (preprocessOnly) {
+      return ee.Image(image).addBands(scaled).select(subBand);
+    }
+    
+    if (loose) {
+      return ee.Image(image).addBands(scaled)
+            .updateMask(mask1.and(mask3).and(mask4))
+            .select(subBand);
+    } else {
+      return ee.Image(image).addBands(scaled)
+            .updateMask(mask1.and(mask2).and(mask3).and(mask4).and(mask5))
+            .select(subBand);
+    }
+  };
+};
+
+// ---------------------------------------------------------------
+// Sentinel-2 Utilities
+var getS2TS = function(region, params, period, merge) {
+  var S2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+      .filterBounds(region).filterDate(period.start, period.end);
+  var S2Cloud = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
+      .filterBounds(region).filterDate(period.start, period.end);
+  var S2Joined = ee.ImageCollection(ee.Join.saveFirst('cloud_prob').apply({
+    primary: S2,
+    secondary: S2Cloud,
+    condition:
+      ee.Filter.equals({leftField: 'system:index', rightField: 'system:index'})
+  }));
+  var masked = ee.ImageCollection(S2Joined.map(function(img){
+    var masked = maskS2Img(img, false);
+    var ndvi = masked.normalizedDifference(['NIR', 'RED']).multiply(10000).rename('NDVI');
+    return masked.addBands(ndvi);
+  }));
+  var unmixed = ee.ImageCollection(unmixing(masked, params.preprocess.endMembers));
+  if (merge) {
+    return ut.dailyComposite(ut.addImgDate(unmixed));
+  } else {
+    return unmixed;
+  }
+};
+
+var getS2Img = function(region, date, preprocessOnly) {
+  var imDate = ee.Date(date);
+  var befDate = imDate.advance(-1, 'day');
+  var aftDate = imDate.advance(1, 'day');
+  var S2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').filterBounds(region)
+            .filterDate(befDate, aftDate);
+  if (S2.size().gt(0).getInfo()) {
+    var S2Cloud = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
+                    .filterBounds(region).filterDate(befDate, aftDate);
+    var S2Joined = ee.ImageCollection(ee.Join.saveFirst('cloud_prob').apply({
+      primary: S2,
+      secondary: S2Cloud,
+      condition:
+        ee.Filter.equals({leftField: 'system:index', rightField: 'system:index'})
+    }));  
+    return maskS2Img(S2Joined.mosaic(), preprocessOnly)
+            .set({'system:index': 'S2_' + imDate.format('YYYY_MM_dd').getInfo()});
+  } else {
+    return null;
+  }
+};
+
+var maskS2Img = function(img, preprocessOnly) {
+  if (preprocessOnly) {
+    return img.select(['B2', 'B3', 'B4', 'B8', 'B11', 'B12'])
+              .rename(['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2']);
+  }
+  
+  var qa = img.select('QA60');
+  var cloud = ee.Image(img.get('cloud_prob')).select('probability');
+  var cloudProbMask = cloud.lt(65);
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0))
+      .and(cloudProbMask);
+  return img.select(['B2', 'B3', 'B4', 'B8', 'B11', 'B12'])
+            .rename(['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2'])
+            .updateMask(mask);
+};
+
+// ---------------------------------------------------------------
+// Sentinel-1 Utilities
+var getS1TS = function(region, params, period, pickMaxOrbit) {
+  
+  var S1 = ee.ImageCollection('COPERNICUS/S1_GRD_FLOAT')
+    .filterBounds(region).filterDate(period.start, period.end)
+    .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+    .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+    .filter(ee.Filter.eq('instrumentMode', 'IW'));
+
+  if (params.preprocess.S1.orbit == 'Ascending' || params.preprocess.S1.orbit == 'Descending') {
+    var S1Filtered = S1.filter(ee.Filter.eq('orbitProperties_pass', params.preprocess.S1.orbit.toUpperCase()));
+  } else if (params.preprocess.S1.orbit == 'Auto') {
+    var passCount = ee.Dictionary(S1.aggregate_histogram('orbitProperties_pass'));
+    var passValues = passCount.values().sort().reverse();
+    var higherCount = passValues.get(0);
+    var maxOrbitalPass = passCount.keys().get(passCount.values().indexOf(higherCount));
+    var S1Filtered = S1.filter(ee.Filter.eq('orbitProperties_pass', maxOrbitalPass));
+  } else if (params.preprocess.S1.orbit == 'Both') {
+    var S1Filtered = S1;
+  }
+
+  if (pickMaxOrbit) {
+    var orbitCount = ee.Dictionary(S1Filtered.aggregate_histogram('relativeOrbitNumber_start'));
+    var orbitValues = orbitCount.values().sort().reverse();
+    var higherOrbitCount = orbitValues.get(0);
+    var maxOrbit = ee.Number.parse(orbitCount.keys().get(orbitCount.values().indexOf(higherOrbitCount)));
+    var S1Filtered2 = S1Filtered.filter(ee.Filter.eq('relativeOrbitNumber_start', maxOrbit));
+  } else {
+    var S1Filtered2 = S1Filtered;
+  }
+
+  var S1Corrected = S1Filtered2.map(function(img) {
+    var filtered = slopeLib.refined_lee(img);
+    var dB = ee.Image(filtered).log10().multiply(10.0);
+    var output = img.select('angle').addBands(dB);
+    return output;
+  });
+
+  var S1Corrected2 = slopeLib.slope_correction(S1Corrected, params.preprocess.S1);
+
+  var S1Final = ee.ImageCollection(S1Corrected2.map(function(img) {
+    var mask = img.select('no_data_mask').eq(1);
+    var ratio = img.select('VV').divide(img.select('VH'))
+                    .multiply(params.preprocess.S1.scaleFactor).rename('ratio');
+    return img.addBands(ratio).updateMask(mask);
+  }));
+
+  return S1Final;
+};
+
+var getS1Img = function(region, date) {
+  var addRatio = function(img) {
+    var img2 = img.add(30);
+    var ratio = img.select('VH').divide(img.select('VV')).rename('ratio').multiply(30);
+    return img.select().addBands(img2).addBands(ratio);
+  };
+  
+  var S1 = ee.ImageCollection('COPERNICUS/S1_GRD').filterBounds(region);
+  var imDate = ee.Date(date);
+  var befDate = imDate.advance(-1, 'day');
+  var aftDate = imDate.advance(1, 'day');
+  var col = S1.filterDate(befDate, aftDate);
+  if (col.size().gt(0).getInfo()) {
+    return addRatio(col.mosaic()).set({'system:index': 'S1_' + imDate.format('YYYY_MM_dd').getInfo()});
+  } else {
+    return null;  
+  }
+};
+
+// ---------------------------------------------------------------
+// Exports
+exports = {
+  getS2TS: getS2TS,
+  getS2Img: getS2Img,
+  getS1TS: getS1TS,
+  getS1Img: getS1Img,
+  getData: getData,
+  getImage: getImage
+};
+
+// End

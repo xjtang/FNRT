@@ -1,0 +1,223 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var area = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-56.93551140035393, -5.805198324833778],
+          [-56.93551140035393, -8.502888900630557],
+          [-53.76046257222893, -8.502888900630557],
+          [-53.76046257222893, -5.805198324833778]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Model settings and parameters (Template)
+var params = {
+  forestMask: ee.ImageCollection('ESA/WorldCover/v200').first().eq(10),
+  grid: ee.FeatureCollection('users/ytzhang/GLANCE/GRIDS/GEOG/GLANCE_V01_SA_GEOG_TILE')
+          .filterMetadata('land', 'equals', 1),
+  area: area,
+  wd: 'users/xjtang/fnrt/',
+  proj: 'EPSG:4326',
+  bucket: 'fnrt-amazon',
+  cloud: false
+};
+
+// ---------------------------------------------------------------
+// Study Time Period
+params.period = {};
+
+params.period.training = {
+  start: '2021-01-01',
+  end: '2022-12-31'
+};
+
+params.period.monitor = {
+  start: '2023-01-01',
+  end: '2023-12-31'
+};
+
+params.period.full = {
+  start: params.period.training.start,
+  end: params.period.monitor.end
+};
+
+params.period.alert = '2023-01-01';
+     
+// ---------------------------------------------------------------
+// Training Parameters
+params.training = {};
+
+params.training.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  band: 'NDFI',
+  res: 20,
+  harmonics: 3,
+  enable: true
+};
+
+params.training.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  band: 'VH',
+  res: 10,
+  enable: true,
+  harmonics: 1,
+  minImage: 20
+};
+
+params.training.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  band: 'NDFI',
+  res: 30,
+  looseMasking: true,
+  harmonics: 3,
+  enable: true
+};
+
+// ---------------------------------------------------------------
+// Monitoring Parameters
+params.monitor = {
+    strikeOut: 4,
+    monitorWindow: 5,
+    maxZ: 25,
+    res: 10,
+    recover: false,
+    resume: true,
+    minSize: 100
+  };
+  
+params.monitor.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  id: 2,
+  zThres: 4,
+  directional: 1,
+  changeOnly: false,
+  minRMSE: 500,
+  maxValue: 10000
+};
+
+params.monitor.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  id: 3,
+  zThres: 2.25,
+  directional: 1,
+  changeOnly: true,
+  minRMSE: 0.01
+};
+
+params.monitor.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  id: 1,
+  zThres: 2,
+  directional: 1,
+  changeOnly: false,
+  minRMSE: 500,
+  maxValue: 10000
+};
+
+// ---------------------------------------------------------------
+// Sentinel-1 Preprocessing Parameters
+params.preprocess = {};
+
+params.preprocess.S1 = {
+  bands: ['VH', 'VV', 'ratio', 'angle'],
+  orbit: 'Both', // Auto, Both, Ascending, or Descending
+  model: 'volume', // volume, surface, or direct
+  elevation: ee.Image('USGS/SRTMGL1_003'),
+  buffer: 30,
+  rawPower: false,
+  splitOrbit: true,
+  normScale: 10,
+  scaleFactor: 30,
+  edgeMask: -30 
+};
+
+// ---------------------------------------------------------------
+// Endmembers
+params.preprocess.endMembers = {
+  gv: [500, 900, 400, 6100, 3000, 1000],
+  npv: [1400, 1700, 2200, 3000, 5500, 3000],
+  soil: [2000, 3000, 3400, 5800, 6000, 5800],
+  shade: [0, 0, 0, 0, 0, 0],
+  cloud: [9000, 9600, 8000, 7800, 7200, 6500],
+  cfThreshold: 0.05
+};
+
+// ---------------------------------------------------------------
+// Visualization Parameters
+params.visual = {};
+
+params.visual.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  bands: ['SWIR1', 'NIR', 'RED'],
+  min: 0,
+  max: 5000
+};
+
+params.visual.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  bands: ['VV', 'VH', 'ratio'],
+  min: 10,
+  max: 30
+};
+
+params.visual.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  bands: ['SWIR1', 'NIR', 'RED'],
+  min: 0,
+  max: 5000
+};
+
+params.visual.mask = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'blue']
+};
+
+var toFracYear = function(date) {
+  var year = date.get('year');
+  var fYear = date.difference(ee.Date.fromYMD(year, 1, 1), 'year');
+  return year.add(fYear);
+};
+
+params.visual.alerts = {
+  min: 30,
+  max: 365,
+  palette: ['FF0080', 'EC1280', 'DA2480', 'C83680', 'B64880', 'A35B80', '916D80', 
+            '7F7F80', '6D9180', '5BA380', '48B680', '36C880', '24DA80', '12EC80',
+            '00FF80', '00EB89', '00D793', '00C49D', '00B0A7', '009CB0', '0089BA', 
+            '0075C4', '0062CE', '004ED7', '003AE1', '0027EB', '0013F5', '0000FF']
+};
+
+// ---------------------------------------------------------------
+// Plotting Parameters
+params.plot = {};
+params.plot.dateFormat = 1;
+params.plot.padding = 0.2;
+
+// ---------------------------------------------------------------
+// Posible Driver Parameters
+params.driver = {};
+params.driver.size = 50;
+
+// ---------------------------------------------------------------
+// Exports
+// print(params);
+exports = {
+  params: params
+};
+
+// End
