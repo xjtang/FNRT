@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------
 // Imports and Parameters:
 var utNRT = require('users/xjtang/FNRT:utilities/nrt');
-var utParams = require('users/xjtang/FNRT:projects/westafrica/params');
+var utParams = require('users/xjtang/FNRT:utilities/parameters');
 var utInput = require('users/xjtang/FNRT:utilities/input');
 var params = utParams.params;
 var maxTile = 1000;
