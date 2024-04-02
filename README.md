@@ -25,4 +25,4 @@
 
  Feel free to contact tang3xx@jmu.edu if you have any questions. 
  
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10903541.svg)](https://doi.org/10.5281/zenodo.10903541)
+[![DOI](https://zenodo.org/badge/780441015.svg)](https://zenodo.org/doi/10.5281/zenodo.10903540)
