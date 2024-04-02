@@ -18,10 +18,10 @@ var area =
 // Model settings and parameters (Template)
 var params = {
   forestMask: ee.ImageCollection('ESA/WorldCover/v200').first().eq(10),
-  grid: ee.FeatureCollection('users/ytzhang/GLANCE/GRIDS/GEOG/GLANCE_V01_SA_GEOG_TILE')
+  grid: ee.FeatureCollection('projects/fusionnrt/assets/misc/GLANCE_V01_SA_GEOG_TILE')
           .filterMetadata('land', 'equals', 1),
   area: area,
-  wd: 'users/xjtang/fnrt/',
+  wd: 'projects/fusionnrt/assets/amazon/',
   proj: 'EPSG:4326',
   bucket: 'fnrt-amazon',
   cloud: false
