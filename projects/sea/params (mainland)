@@ -1,0 +1,278 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var mainland = /* color: #d63000 */ee.Geometry.Polygon(
+        [[[92.73304292726945, 19.266406025070452],
+          [94.02942964601945, 18.10080524233133],
+          [93.94153902101945, 15.535049418117387],
+          [95.72132417726945, 15.598549395560482],
+          [97.09136187935137, 16.537192104185944],
+          [97.50884234810137, 12.882469937358385],
+          [97.81645953560137, 10.580675665204717],
+          [97.94829547310137, 7.804582912834218],
+          [98.76128375435137, 7.390768476349124],
+          [99.72808062935137, 5.841147260586114],
+          [100.45317828560137, 3.76118511902937],
+          [101.81548297310137, 2.1374168679787724],
+          [103.33159625435137, 1.2149701731762375],
+          [104.03472125435137, 0.4020696564462589],
+          [104.82573687935137, 0.6657298514224571],
+          [104.71587359810137, 1.522499219662404],
+          [104.23247516060137, 2.3569743164809025],
+          [103.88091266060137, 3.4103114198744757],
+          [103.57329547310137, 5.535045095006373],
+          [102.27690875435137, 6.736595568621866],
+          [100.84868609810137, 7.739270455820167],
+          [100.32134234810137, 9.368830453062465],
+          [99.75915760290358, 10.20537652768757],
+          [100.26452869665358, 12.660353362400146],
+          [101.82458729040358, 12.274172618583671],
+          [102.26404041540358, 11.133854911827273],
+          [103.38464588415358, 10.07560002748376],
+          [104.52722400915358, 9.837541199993682],
+          [104.65905994665358, 8.405724205103017],
+          [105.69177479040358, 8.796782990588206],
+          [107.49353260290358, 9.902483524802621],
+          [108.94372791540358, 10.723947140287184],
+          [109.69200679713916, 12.29939805090049],
+          [109.56017085963916, 14.160193933556064],
+          [108.94493648463916, 15.667650074955128],
+          [107.95616695338916, 16.827856643146518],
+          [106.90147945338916, 17.834644233199977],
+          [106.06651851588916, 18.835772194469087],
+          [106.22032710963916, 19.47919821756688],
+          [107.14317867213916, 20.388060498271425],
+          [108.39562007838916, 21.475736479128013],
+          [107.86827632838916, 22.087849395044376],
+          [107.53868648463916, 22.920119173108866],
+          [105.42931148463916, 23.646708483408514],
+          [101.75987789088916, 22.98081922234867],
+          [99.82628414088916, 22.798637521799332],
+          [99.27696773463916, 23.505738528688763],
+          [98.48595210963916, 24.748996780971478],
+          [99.51866695338916, 26.039184344158244],
+          [98.90343257838916, 27.763439866848618],
+          [97.91466304713916, 28.866006655279065],
+          [97.18956539088916, 28.808262896959103],
+          [95.01427242213916, 27.041680418470158],
+          [93.27843257838916, 24.40930928027232],
+          [91.76231929713916, 20.943146634535843]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Model settings and parameters (Southeast Asia)
+var params = {
+  forestMask: ee.ImageCollection('ESA/WorldCover/v200').first().eq(10),
+  biomeMask: ee.Image('projects/fusionnrt/assets/misc/biome_mask'),
+  pastMask: ee.ImageCollection('projects/fusionnrt/assets/archive/alerts_2024')
+              .mosaic().select('Deforestaion').unmask().eq(0),
+  grid: ee.FeatureCollection('projects/fusionnrt/assets/misc/GLANCE_V01_AS_GEOG_TILE')
+            .filterMetadata('land', 'equals', 1),
+  area: mainland,
+  //wd: 'projects/bu-nearrealtime/sea/mainland/',
+  wd: 'projects/fusionnrt/assets/sea/mainland/',
+  proj: 'EPSG:4326',
+  bucket: 'fnrt-sea',
+  cloud: false
+};
+
+// ---------------------------------------------------------------
+// Study Time Period
+params.period = {};
+
+params.period.training = {
+  start: '2022-01-01',
+  end: '2024-12-31'
+};
+
+params.period.monitor = {
+  start: '2025-01-01',
+  end: '2025-12-31'
+};
+
+params.period.full = {
+  start: params.period.training.start,
+  end: params.period.monitor.end
+};
+
+params.period.alert = {
+  start: '2025-01-01',
+  end: '2025-12-31'
+};
+
+// ---------------------------------------------------------------
+// Training Parameters
+params.training = {};
+
+params.training.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  band: 'NDFI',
+  res: 20,
+  harmonics: 3,
+  enable: true
+};
+
+params.training.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  band: 'VH',
+  res: 20,
+  harmonics: 1,
+  enable: true,
+  minImage: 50
+};
+
+params.training.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  band: 'NDFI',
+  res: 30,
+  harmonics: 3,
+  looseMasking: true,
+  enable: true
+};
+
+// ---------------------------------------------------------------
+// Monitoring Parameters
+params.monitor = {
+    strikeOut: 4,
+    monitorWindow: 5,
+    maxZ: 25,
+    res: 20,
+    recover: false,
+    resume: true,
+    minSize: 25
+  };
+  
+params.monitor.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  id: 2,
+  zThres: 3.5,
+  directional: 1,
+  changeOnly: false,
+  minRMSE: 500,
+  maxValue: 10000
+};
+
+params.monitor.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  id: 3,
+  zThres: 2.25,
+  directional: 1,
+  changeOnly: true,
+  minRMSE: 0.01
+};
+
+params.monitor.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  id: 1,
+  zThres: 3.5,
+  directional: 1,
+  changeOnly: false,
+  minRMSE: 500,
+  maxValue: 10000
+};
+
+// ---------------------------------------------------------------
+// Sentinel-1 Preprocessing Parameters
+params.preprocess = {};
+
+params.preprocess.S1 = {
+  bands: ['VH', 'VV', 'ratio', 'angle'],
+  orbit: 'Both', // Auto, Both, Ascending, or Descending
+  model: 'volume', // volume, surface, or direct
+  elevation: ee.Image('USGS/SRTMGL1_003'),
+  buffer: 30,
+  rawPower: false,
+  splitOrbit: true,
+  normScale: 10,
+  scaleFactor: 30,
+  edgeMask: -30 
+};
+
+// ---------------------------------------------------------------
+// Endmembers
+params.preprocess.endMembers = {
+  gv: [500, 900, 400, 6100, 3000, 1000],
+  npv: [1400, 1700, 2200, 3000, 5500, 3000],
+  soil: [2000, 3000, 3400, 5800, 6000, 5800],
+  shade: [0, 0, 0, 0, 0, 0],
+  cloud: [9000, 9600, 8000, 7800, 7200, 6500],
+  cfThreshold: 0.05
+};
+
+// ---------------------------------------------------------------
+// Visualization Parameters
+params.visual = {};
+
+params.visual.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  bands: ['SWIR1', 'NIR', 'RED'],
+  min: 0,
+  max: 5000
+};
+
+params.visual.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  bands: ['VV', 'VH', 'ratio'],
+  min: 10,
+  max: 30
+};
+
+params.visual.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  bands: ['SWIR1', 'NIR', 'RED'],
+  min: 0,
+  max: 5000
+};
+
+params.visual.mask = {
+  min: 0,
+  max: 1,
+  palette: ['blue']
+};
+
+var toFracYear = function(date) {
+  var year = date.get('year');
+  var fYear = date.difference(ee.Date.fromYMD(year, 1, 1), 'year');
+  return year.add(fYear);
+};
+
+params.visual.alerts = {
+  //min: toFracYear(ee.Date(params.period.monitor.start)).getInfo(),
+  //max: toFracYear(ee.Date(params.period.monitor.end)).getInfo(),
+  min: 0,
+  max: 365,
+  palette: ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026']
+};
+
+// ---------------------------------------------------------------
+// Plotting Parameters
+params.plot = {};
+params.plot.dateFormat = 1;
+params.plot.padding = 0.2;
+
+// ---------------------------------------------------------------
+// Posible Driver Parameters
+params.driver = {};
+params.driver.size = 3500;
+
+// ---------------------------------------------------------------
+// Other Parameters
+params.protectedArea = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+                      .filterBounds(params.area);
+
+// ---------------------------------------------------------------
+// Exports
+// print(params);
+exports = {
+  params: params
+};
+
+// End

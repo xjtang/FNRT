@@ -13,12 +13,6 @@ var utInput = require('users/xjtang/FNRT:utilities/input');
 var utChart = require('users/xjtang/FNRT:utilities/chart');
 var params = utParams.params;
 
-var year = params.period.monitor.end.slice(0, 4);
-var chartPeriod = {
-  start: year + '-01-01',
-  end: year + '-12-31'
-};
-
 // ---------------------------------------------------------------
 // Manual Override:
 
@@ -26,13 +20,22 @@ var chartPeriod = {
 //params.training.S1.band = 'VH';
 
 var createPanel = function(params) {
+  var year = params.period.monitor.end.slice(0, 4);
+  var chartPeriod = {
+    start: year + '-01-01',
+    end: year + '-12-31'
+  };
   
   // ---------------------------------------------------------------
   // Main functions:
     // run and plot CCD for a pixel
   var chartCCD = function(coords) {
     resetTSPanel();
-    var ccd = ee.ImageCollection(params.wd + 'training');
+    if (params.ccd) {
+      var ccd = params.ccd;
+    } else {
+      var ccd = ee.ImageCollection(params.wd + 'training');
+    }
     //print(params);
     //print(ccd);
     var sensor = ccdSelect.getValue();
@@ -116,7 +119,11 @@ var createPanel = function(params) {
     // run and plot NRT for a pixel (separate sensors)
   var chartNRT = function(coords) {
     resetTSPanel();
-    var ccd = ee.ImageCollection(params.wd + 'training');
+    if (params.ccd) {
+      var ccd = params.ccd;
+    } else {
+      var ccd = ee.ImageCollection(params.wd + 'training');
+    }
     //tsPanel.add(ui.Label('Running NRT separately...'));
     var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
     utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
@@ -210,7 +217,13 @@ var createPanel = function(params) {
     };
     
     resetTSPanel();
-    var ccd = ee.ImageCollection(params.wd + 'training');
+    
+    if (params.ccd) {
+      var ccd = params.ccd;
+    } else {
+      var ccd = ee.ImageCollection(params.wd + 'training');
+    }
+    
     //tsPanel.add(ui.Label('Running NRT merged...'));
     var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
     utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
@@ -299,7 +312,29 @@ var createPanel = function(params) {
     // reset all
   var resetAll = function() {
     resetTSPanel();
+    //utCommon.removeLayer(mapPanel, 'Alert');
+  };
+  
+    //initialize
+  var initialize = function() {
     utCommon.removeLayer(mapPanel, 'Alert');
+    if (params.alerts) {
+      var alerts = params.alerts.mosaic().clip(params.area);
+    } else {
+      var alerts = ee.ImageCollection(params.wd + 'alerts').mosaic().clip(params.area);
+    }
+    mapPanel.addLayer(alerts.select('Filtered'), params.visual.alerts, 'Alerts (All)', true);
+    mapPanel.addLayer(alerts.select('Filtered').clip(params.protectedArea), params.visual.alerts, 'Alerts in Protected Area', false);
+    //mapPanel.addLayer(alerts, {}, 'Alerts (Full Image)', false);
+    mapPanel.addLayer(alerts.select('Deforestation'), params.visual.alerts, 'Possible Deforestation (Beta)', false);
+    mapPanel.addLayer(alerts.select('Recovered'), params.visual.alerts, 'Already Recovered (Beta)', false);
+    if (params.driver.size) {
+      mapPanel.addLayer(alerts.select('Natural'), params.visual.alerts, 'Possible Natural (Beta)', false);
+      mapPanel.addLayer(alerts.select('Anthropogenic'), params.visual.alerts, 'Possible Anthropogenic (Beta)', false);
+    }
+    var legend = utCommon.genLegend(params.visual.alerts.min, params.visual.alerts.max, 
+                    params.visual.alerts.palette, 'horizontal', 'bottom-left', 'Date of Change');
+    mapPanel.add(legend);
   };
   
   // ---------------------------------------------------------------
@@ -309,7 +344,7 @@ var createPanel = function(params) {
   var nrtButton = ui.Button('NRT');
   var loadButton = ui.Button('Load');
   var resetButton = ui.Button('Reset');
-  var menuSet = ui.Panel([ccdButton, nrtButton, loadButton, resetButton], 
+  var menuSet = ui.Panel([ccdButton, nrtButton, resetButton], 
                           ui.Panel.Layout.Flow('vertical'));
   var ccdSelect = ui.Select(['Landsat', 'Sentinel-2', 'Sentinel-1'], 'Select sensor for CCD.', 'Landsat');
   var LSTCheck = ui.Checkbox('Landsat', true);
@@ -370,18 +405,7 @@ var createPanel = function(params) {
     resetAll();
   });
   
-  loadButton.onClick(function() {
-    utCommon.removeLayer(mapPanel, 'Alert');
-    var alerts = ee.ImageCollection(params.wd + 'alerts').mosaic();
-    mapPanel.addLayer(alerts.select('Filtered'), params.visual.alerts, 'Alerts (All)', true);
-    mapPanel.addLayer(alerts, {}, 'Alerts (Full Image)', false);
-    mapPanel.addLayer(alerts.select('Deforestaion'), params.visual.alerts, 'Possible Deforestation (Beta)', false);
-    mapPanel.addLayer(alerts.select('Recovered'), params.visual.alerts, 'Already Recovered (Beta)', false);
-    if (params.driver.size) {
-      mapPanel.addLayer(alerts.select('Natural'), params.visual.alerts, 'Possible Natural (Beta)', false);
-      mapPanel.addLayer(alerts.select('Anthropogenic'), params.visual.alerts, 'Possible Anthropogenic (Beta)', false);
-    }
-  });
+  loadButton.onClick(initialize);
   
   mapPanel.onClick(function(coords) {
     if (listener == 1) {
@@ -395,6 +419,7 @@ var createPanel = function(params) {
     }
   });
 
+  initialize();
   return uiPanel;
 };
 

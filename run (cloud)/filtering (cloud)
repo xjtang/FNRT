@@ -46,21 +46,23 @@ var runTile = function(region, params, h, v) {
     var cache_path = bucket + tileID + '_' + lastCacheDate + '_C.tif';
     //print(cache_path);
     
-    var lastCache = ee.ImageCollection(ee.Image.loadGeoTIFF(cache_path)).mosaic();
+    var lastCache = ee.ImageCollection(ee.Image.loadGeoTIFF(cache_path)).mosaic()
+                      .updateMask(params.biomeMask);
     var recover = lastCache.select('Recover');
 
     if (params.monitor.recover) {
-      var date = lastCache.select('DoC').where(lastCache, 0).rename('Date');
+      var date = lastCache.select('DoC').where(recover, 0).rename('Date');
     } else {
       var date = lastCache.select('DoC').rename('Date')
     }
   
     var trainingEndYear = params.period.training.end.slice(0, 4);
     var baseDate = trainingEndYear + '-01-01';  
-    var cutoff = ee.Number(ee.Date(params.period.alert).difference(ee.Date(baseDate), 'day'));
+    var cutoff1 = ee.Number(ee.Date(params.period.alert.start).difference(ee.Date(baseDate), 'day'));
+    var cutoff2 = ee.Number(ee.Date(params.period.alert.end).difference(ee.Date(baseDate), 'day'));
     
-    date = date.subtract(cutoff).add(1).where(date.lt(cutoff), 0);
-    recover = recover.subtract(cutoff).add(1).where(recover.lt(cutoff), 0);
+    date = date.subtract(cutoff1).add(1).where(date.lt(cutoff1), 0).where(date.gt(cutoff2), 0);
+    recover = recover.subtract(cutoff1).add(1).where(recover.lt(cutoff1), 0).where(recover.gt(cutoff2), 0);
     
     var change = date.gt(0).selfMask();
     var size = change.addBands(change).toInt().reduceConnectedComponents({
@@ -80,15 +82,19 @@ var runTile = function(region, params, h, v) {
     }
 
     var alert_des = tileID + '_' + lastCacheDate + '_A';
-    var final = lastCache.addBands(date.selfMask().rename('Unfiltered'))
+    var final = lastCache.select('Change')
+                      .addBands(date.selfMask().rename('Unfiltered'))
                       .addBands(alert.rename('Filtered'))
                       .addBands(size)
                       .addBands(recover.rename('Recover'))
                       .select(['Filtered', 'Unfiltered', 'Size', 'Recover'])
                       .addBands(deforestation).addBands(recovered)
                       .addBands(natural).addBands(anthro)
+                      .set({cutoff1: params.period.alert.start})
+                      .set({cutoff2: params.period.alert.end})
                       .set({maxSize: maxSize})
                       .set({minSize: params.monitor.minSize})
+                      .set({baseDate: baseDate})
                       .set({'system:index': alert_des})
                       .set(extraInfo);
                       

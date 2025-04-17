@@ -1,0 +1,33 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Check the latest image in Landsat and Sentinel-2 collections
+
+// ---------------------------------------------------------------
+
+var year = 2024;
+
+Map.onClick(function(coords){
+  var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
+  
+  var L8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+    .filterBounds(pixel)
+    .filterDate(year + '-01-01', year + '-12-31')
+    .sort('system:time_start', false)
+    .first();
+  print(L8);
+  
+  var L9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+    .filterBounds(pixel)
+    .filterDate(year + '-01-01', year + '-12-31')
+    .sort('system:time_start', false)
+    .first();
+  print(L9);
+  
+  var S2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    .filterBounds(pixel)
+    .filterDate(year + '-01-01', year + '-12-31')
+    .sort('system:time_start', false)
+    .first();
+  print(S2); 
+});

@@ -1,0 +1,51 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Running Monitoring (Southeast Asia)
+
+// ---------------------------------------------------------------
+// Imports and Parameters:
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require("users/xjtang/FNRT:projects/sea/params (mainland)");
+//var utParams = require("users/xjtang/FNRT:projects/sea/params (maritime)");
+var utInput = require('users/xjtang/FNRT:utilities/input');
+//var utMonitoring = require('users/xjtang/FNRT:run (cloud)/monitoring (cloud)');
+var utMonitoring = require('users/xjtang/FNRT:run/monitoring');
+var params = utParams.params;
+var maxTile = 1000;
+var extraInfo = {
+  version: '0.1',
+  user: 'xjtang'
+};
+
+// ---------------------------------------------------------------
+// Manual Override:
+//params.area = geometry;
+//params.wd = 'projects/bu-nearrealtime/sea/maritime/';
+//params.cloud = true;
+//params.period.training.start = '2020-01-01';
+//params.period.training.end = '2022-12-31';
+
+params.training.LST.enable = true;
+params.training.S2.enable = true;
+params.training.S1.enable = false;
+params.period.monitor.start = '2024-10-01';
+params.period.monitor.end = '2025-01-31';
+//params.monitor.res = 20;
+//params.monitor.S2.zThres = 5.5;
+//params.monitor.LST.zThres = 5;
+
+//params.period.full.start = params.period.training.start;
+//params.period.full.end = params.period.monitor.end;
+//params.period.alert = '2023-01-01';
+
+//params.monitor.resume = false;
+//print(params);
+
+// ---------------------------------------------------------------
+// Run:
+utMonitoring.runRegion(params.area, params);
+//utMonitoring.runTile(params.area, params, 1, 1);
+//utMonitoring.runSingleTile(48, 25, params);
+
+// End

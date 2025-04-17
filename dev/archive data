@@ -1,0 +1,47 @@
+//var alerts = ee.ImageCollection('projects/fusionnrt/assets/ghana/2024/alerts')
+//                  .merge(ee.ImageCollection('projects/fusionnrt/assets/africa/alerts'))
+//                  .merge(ee.ImageCollection('projects/fusionnrt/assets/amazon/alerts'))
+//                  .merge(ee.ImageCollection('projects/fusionnrt/assets/westafrica/alerts'))
+//                  .merge(ee.ImageCollection('projects/fusionnrt/assets/sea/mainland/alerts'))
+//                  .merge(ee.ImageCollection('projects/fusionnrt/assets/sea/maritime/alerts'))
+//                  .merge(ee.ImageCollection('projects/fusionnrt/assets/eastafrica/alerts'))
+//                  .mosaic();
+
+var alerts = ee.ImageCollection('projects/fusionnrt/assets/ghana/2023/alerts')
+                  .merge(ee.ImageCollection('projects/bu-nearrealtime/westafrica/alerts'))
+                  .merge(ee.ImageCollection('projects/bu-nearrealtime/africa/alerts'))
+                  .merge(ee.ImageCollection('projects/bu-nearrealtime/amazon/alerts'))
+                  .merge(ee.ImageCollection('projects/bu-nearrealtime/sea/mainland/alerts'))
+                  .merge(ee.ImageCollection('projects/bu-nearrealtime/sea/maritime/alerts'))
+                  .merge(ee.ImageCollection('projects/bu-nearrealtime/eastafrica/alerts'))
+                  .mosaic();
+
+var areas = ee.FeatureCollection('projects/fusionnrt/assets/misc/areas');
+var wd = 'projects/fusionnrt/assets/archive/alerts_2023/';
+
+print(areas);
+
+var archive = function(region, year) {
+  var area = areas.filterMetadata('name', 'equals', region).geometry();
+  
+  Export.image.toAsset({
+        image: alerts,
+        scale: 20,
+        description: region+'_'+year+'_A',
+        assetId: wd+region+'_'+year+'_A',
+        crs: 'EPSG:4326',
+        region: area,
+        maxPixels: 1e13,
+        pyramidingPolicy: {'.default': 'mode'}
+  });
+  
+};
+
+archive('Amazon', 2023);
+archive('SEA Mainland', 2023);
+archive('SEA Maritime', 2023);
+archive('Central Africa', 2023);
+archive('East Africa', 2023);
+archive('West Africa', 2023);
+
+    

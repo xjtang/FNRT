@@ -97,7 +97,7 @@ var runTile = function(region, params, h, v) {
           //print(S1_data_orbit);
           var S1_des = tileID + '_' + params.training.S1.short + '_' + trainingEndYear + '_OB' + orbit.getInfo() + '_T';
           var S1_Training = utNRT.training(S1_data_orbit, params.training.S1.band, params.training.S1.harmonics)
-                              .updateMask(params.forestMask)
+                              .updateMask(params.forestMask).updateMask(params.biomeMask)
                               .set({tile: tileID, sensor: 'Sentinel-1', short: params.training.S1.short})
                               .set({horizontal: h, vertical: v})
                               .set({harmonics: params.training.S1.harmonics})

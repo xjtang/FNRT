@@ -1,0 +1,37 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Running Model Training (West Africa)
+
+// ---------------------------------------------------------------
+// Imports and Parameters:
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:projects/westafrica/params');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var utTraining = require('users/xjtang/FNRT:run/training');
+var params = utParams.params;
+var maxTile = 1000;
+var extraInfo = {
+  version: '0.1',
+  user: 'xjtang'
+};
+
+// ---------------------------------------------------------------
+// Manual Override:
+params.training.LST.enable = false;
+params.training.S2.enable = false;
+params.training.S1.enable = true;
+//params.area = geometry;
+//params.period.training.start = '2020-01-01';
+//params.period.training.end = '2022-12-31';
+//params.wd = 'projects/bu-nearrealtime/we   stafrica/';
+
+//print(params);
+
+// ---------------------------------------------------------------
+// Run:
+utTraining.runRegion(params.area, params);
+//utTraining.runTile(params.area, params, 1, 1);
+//utTraining.runSingleTile(48, 25, params);
+
+// End

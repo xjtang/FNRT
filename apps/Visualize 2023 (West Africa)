@@ -1,0 +1,93 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var area = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-13.525384604083976, 8.120383127261439],
+          [-12.976068197833976, 7.183983674312067],
+          [-11.613763510333976, 6.485860116556904],
+          [-9.812005697833976, 5.218113932203758],
+          [-7.9663025728339765, 3.903958728737442],
+          [-7.4389588228339765, 4.057396215779756],
+          [-5.7470642915839765, 4.583239642590239],
+          [-4.0331971040839765, 4.824124667304699],
+          [-2.0556580415839765, 4.429906621175893],
+          [0.9545958646660235, 5.502509018303493],
+          [2.2509825834160235, 6.005332234442207],
+          [4.3823302396660235, 6.027183869444188],
+          [5.3930724271660235, 4.342273405845587],
+          [6.0302794584160235, 4.057396215779756],
+          [8.645025552166024, 4.188890909182707],
+          [9.414068520916024, 3.4654151075240964],
+          [9.743658364666024, 3.618929818046125],
+          [11.325689614666024, 4.232717596778617],
+          [11.347662270916024, 4.911698260215233],
+          [10.798345864666024, 6.136428783347907],
+          [9.765631020916024, 7.074969848988766],
+          [8.601080239666024, 7.902801255947173],
+          [7.3925841459160235, 8.511731498128377],
+          [6.0522521146660235, 9.011203781881951],
+          [4.4482482084160235, 9.29321155426279],
+          [3.4594786771660235, 9.336577388408008],
+          [2.0752013334160235, 9.856539631271392],
+          [0.6469786771660235, 9.748280289880928],
+          [0.7128966459160235, 10.397295928220334],
+          [0.2934268551879571, 10.870363199281874],
+          [0.27344352091602353, 11.60512847809738],
+          [-3.0655220546291018, 11.347587869318692],
+          [-3.7255799165839765, 8.967798251213285],
+          [-5.5932556978339765, 7.968088006841396],
+          [-9.173253406128262, 9.4666424197198],
+          [-13.501866687378262, 8.880971644820876]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Visualizing pantropical results for 2023 (West Africa)
+
+// ---------------------------------------------------------------
+// Imports and predefined variables:
+var listener = 0;
+var utCommon = require('users/xjtang/FNRT:utilities/common');
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:projects/westafrica/params');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var utChart = require('users/xjtang/FNRT:utilities/chart');
+var plotter = require('users/xjtang/FNRT:dev/plotter');
+var params = utParams.params;
+
+// ---------------------------------------------------------------
+// Manual Override:
+
+params.wd = 'projects/bu-nearrealtime/westafrica/';
+params.period.training.start = '2020-01-01';
+params.period.training.end = '2022-12-31';
+params.period.monitor.start = '2023-01-01';
+params.period.monitor.end = '2023-12-31';
+params.period.full.start = params.period.training.start;
+params.period.full.end = params.period.training.end;
+params.period.alert = '2023-01-01';
+
+//params.area = area;
+params.visual.alerts.min = 30;
+params.visual.alerts.max = 365;
+
+params.protectedArea = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+                      .filterBounds(params.area);
+
+// ---------------------------------------------------------------
+// Initialization:
+var uiPanel = plotter.createPanel(params);
+ui.root.clear();
+ui.root.add(uiPanel);
+
+var mapPanel = uiPanel.getFirstPanel().widgets().get(0);
+
+mapPanel.addLayer(params.forestMask.clip(params.area), {min:0, max:1}, 'Forest Mask', false);
+mapPanel.addLayer(params.biomeMask.clip(params.area), {min:0, max:1}, 'Biome Mask', false);
+mapPanel.addLayer(params.protectedArea, {color:'black'}, 'Protected Area', false);
+mapPanel.addLayer(params.area, {color: 'red'}, 'Study Area', false);
+mapPanel.centerObject(params.area, 6);
+mapPanel.setOptions('SATELLITE');
+
+// End

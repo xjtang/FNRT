@@ -1,0 +1,33 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var areas = ee.FeatureCollection("projects/fusionnrt/assets/misc/areas");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var year = 2024;
+
+var L9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+          .filterDate(year+'-01-01', year+'-12-31')
+          .filterBounds(areas);
+          
+var L8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+          .filterDate(year+'-01-01', year+'-12-31')
+          .filterBounds(areas);
+
+var S2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+          .filterDate(year+'-01-01', year+'-12-31')
+          .filterBounds(areas);
+
+var mostRecent = function (col, band) {
+  return col.map(function(img){
+    var t = ee.Number.parse(img.date().format('DDD'));
+    return img.select(band).multiply(0).add(t).toInt().rename('date');
+  }).max();
+};
+
+var vis = {
+  min: 0,
+  max: 365,
+  palette: ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026']
+};
+
+Map.addLayer(mostRecent(L9, 'SR_B1'), vis, 'Landsat-9');
+Map.addLayer(mostRecent(L8, 'SR_B1'), vis, 'Landsat-8');
+Map.addLayer(mostRecent(S2, 'B1'), vis, 'Sentinel-2');

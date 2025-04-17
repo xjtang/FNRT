@@ -1,0 +1,48 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Running Monitoring (East Africa)
+
+// ---------------------------------------------------------------
+// Imports and Parameters:
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:projects/eastafrica/params');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var utMonitoring = require('users/xjtang/FNRT:run/monitoring');
+//var utMonitoring = require('users/xjtang/FNRT:run (cloud)/monitoring (cloud)');
+var params = utParams.params;
+var maxTile = 1000;
+var extraInfo = {
+  version: '0.1',
+  user: 'xjtang'
+};
+
+// ---------------------------------------------------------------
+// Manual Override:
+//params.cloud = true;
+//params.wd = 'projects/bu-nearrealtime/eastafrica/';
+
+params.training.LST.enable = true;
+params.training.S2.enable = true;
+params.training.S1.enable = false;
+//params.period.training.start = '2020-01-01';
+//params.period.training.end = '2022-12-31';
+params.period.monitor.start = '2024-10-01';
+params.period.monitor.end = '2025-01-31';
+//params.monitor.res = 20;
+//params.monitor.S2.zThres = 5.5;
+//params.monitor.LST.zThres = 5;
+
+//params.period.full.start = params.period.training.start;
+//params.period.full.end = params.period.monitor.end;
+//params.period.alert = '2024-01-01';
+
+//print(params);
+
+// ---------------------------------------------------------------
+// Run:
+utMonitoring.runRegion(params.area, params);
+//utMonitoring.runTile(params.area, params, 1, 1);
+//utMonitoring.runSingleTile(20, 22, params);
+
+// End

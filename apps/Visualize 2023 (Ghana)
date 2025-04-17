@@ -1,0 +1,53 @@
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Visualizing pantropical results for 2023 (Ghana)
+
+// ---------------------------------------------------------------
+// Imports and predefined variables:
+var listener = 0;
+var utCommon = require('users/xjtang/FNRT:utilities/common');
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utParams = require('users/xjtang/FNRT:projects/ghana/params');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var utChart = require('users/xjtang/FNRT:utilities/chart');
+var plotter = require('users/xjtang/FNRT:dev/plotter');
+var params = utParams.params;
+
+// ---------------------------------------------------------------
+// Manual Override:
+
+params.wd = 'projects/fusionnrt/assets/ghana/2023/',
+params.period.training.start = '2020-01-01';
+params.period.training.end = '2022-12-31';
+params.period.monitor.start = '2023-01-01';
+params.period.monitor.end = '2023-12-31';
+params.period.full.start = params.period.training.start;
+params.period.full.end = params.period.training.end;
+params.period.alert = '2023-01-01';
+
+//params.area = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level0")
+//              .filter(ee.Filter.eq('ADM0_NAME', 'Ghana')).first().geometry();
+
+//params.visual.alerts.min = 30;
+//params.visual.alerts.max = 365;
+
+//params.protectedArea = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+//                      .filterBounds(params.area);
+
+// ---------------------------------------------------------------
+// Initialization:
+var uiPanel = plotter.createPanel(params);
+ui.root.clear();
+ui.root.add(uiPanel);
+
+var mapPanel = uiPanel.getFirstPanel().widgets().get(0);
+
+mapPanel.addLayer(params.forestMask.clip(params.area), {min:0, max:1}, 'Forest Mask', false);
+mapPanel.addLayer(params.biomeMask.clip(params.area), {min:0, max:1}, 'Biome Mask', false);
+mapPanel.addLayer(params.protectedArea, {color:'black'}, 'Protected Area', false);
+mapPanel.addLayer(params.area, {color: 'red'}, 'Study Area', false);
+mapPanel.centerObject(params.area, 8);
+mapPanel.setOptions('SATELLITE');
+
+// End

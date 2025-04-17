@@ -1,58 +1,58 @@
-/**** Start of imports. If edited, may not auto-convert in the playground. ****/
-var area = 
-    /* color: #d63000 */
-    /* displayProperties: [
-      {
-        "type": "rectangle"
-      }
-    ] */
-    ee.Geometry.Polygon(
-        [[[-56.93551140035393, -5.805198324833778],
-          [-56.93551140035393, -8.502888900630557],
-          [-53.76046257222893, -8.502888900630557],
-          [-53.76046257222893, -5.805198324833778]]], null, false);
-/***** End of imports. If edited, may not auto-convert in the playground. *****/
 // Fusion Near Real-time
 // Near real-time monitoring of forest disturbance by fusion of multi-sensor data
 
-// Model settings and parameters (Template)
+// Visualizing pantropical results for 2025 (Pantropical)
+
+// ---------------------------------------------------------------
+// Imports and predefined variables:
+var listener = 0;
+var utCommon = require('users/xjtang/FNRT:utilities/common');
+var utNRT = require('users/xjtang/FNRT:utilities/nrt');
+var utInput = require('users/xjtang/FNRT:utilities/input');
+var utChart = require('users/xjtang/FNRT:utilities/chart');
+var plotter = require('users/xjtang/FNRT:dev/plotter (live)');
+
+// ---------------------------------------------------------------
+// Parameters
 var params = {
   forestMask: ee.ImageCollection('ESA/WorldCover/v200').first().eq(10),
   biomeMask: ee.Image('projects/fusionnrt/assets/misc/biome_mask'),
   grid: ee.FeatureCollection('projects/fusionnrt/assets/misc/GLANCE_V01_SA_GEOG_TILE')
           .filterMetadata('land', 'equals', 1),
-  area: area,
+  area: ee.FeatureCollection('projects/fusionnrt/assets/misc/areas').geometry(),
   wd: 'projects/fusionnrt/assets/amazon/',
   proj: 'EPSG:4326',
   bucket: 'fnrt-amazon',
   cloud: false
 };
 
-// ---------------------------------------------------------------
-// Study Time Period
+//params.past = ee.ImageCollection('projects/fusionnrt/assets/archive/alerts_2024')
+//                  .mosaic().select('Deforestaion').unmask().eq(0);
+params.alerts = ee.ImageCollection('projects/fusionnrt/assets/ghana/2025/alerts')
+                  .merge(ee.ImageCollection('projects/servir-wa/projects_ast/near_real_time/2025/alerts'))
+                  .merge(ee.ImageCollection('projects/fusionnrt/assets/africa/alerts'))
+                  .merge(ee.ImageCollection('projects/fusionnrt/assets/amazon/alerts'))
+                  .merge(ee.ImageCollection('projects/fusionnrt/assets/eastafrica/alerts'))
+                  .merge(ee.ImageCollection('projects/fusionnrt/assets/sea/mainland/alerts'))
+                  .merge(ee.ImageCollection('projects/fusionnrt/assets/sea/maritime/alerts'))
+                  //.map(function(x){return x.updateMask(params.past)});
+
 params.period = {};
-
 params.period.training = {
-  start: '2021-01-01',
-  end: '2022-12-31'
+  start: '2022-01-01',
+  end: '2024-12-31'
 };
-
 params.period.monitor = {
-  start: '2023-01-01',
-  end: '2023-12-31'
+  start: '2025-01-01',
+  end: '2025-12-31'
 };
-
 params.period.full = {
   start: params.period.training.start,
   end: params.period.monitor.end
 };
-
-params.period.alert = '2023-01-01';
+params.period.alert = '2025-01-01';
      
-// ---------------------------------------------------------------
-// Training Parameters
 params.training = {};
-
 params.training.S2 = {
   sensor: 'Sentinel-2',
   short: 'S2',
@@ -61,7 +61,6 @@ params.training.S2 = {
   harmonics: 3,
   enable: true
 };
-
 params.training.S1 = {
   sensor: 'Sentinel-1',
   short: 'S1',
@@ -71,7 +70,6 @@ params.training.S1 = {
   harmonics: 1,
   minImage: 20
 };
-
 params.training.LST = {
   sensor: 'Landsat',
   short: 'LST',
@@ -82,29 +80,25 @@ params.training.LST = {
   enable: true
 };
 
-// ---------------------------------------------------------------
-// Monitoring Parameters
 params.monitor = {
     strikeOut: 4,
     monitorWindow: 5,
     maxZ: 25,
-    res: 10,
+    res: 20,
     recover: false,
     resume: true,
-    minSize: 100
+    minSize: 25
   };
-  
 params.monitor.S2 = {
   sensor: 'Sentinel-2',
   short: 'S2',
   id: 2,
-  zThres: 4,
+  zThres: 3.5,
   directional: 1,
   changeOnly: false,
-  minRMSE: 500,
+  minRMSE: 250,
   maxValue: 10000
 };
-
 params.monitor.S1 = {
   sensor: 'Sentinel-1',
   short: 'S1',
@@ -114,22 +108,18 @@ params.monitor.S1 = {
   changeOnly: true,
   minRMSE: 0.01
 };
-
 params.monitor.LST = {
   sensor: 'Landsat',
   short: 'LST',
   id: 1,
-  zThres: 2,
+  zThres: 3.5,
   directional: 1,
   changeOnly: false,
-  minRMSE: 500,
+  minRMSE: 250,
   maxValue: 10000
 };
 
-// ---------------------------------------------------------------
-// Sentinel-1 Preprocessing Parameters
 params.preprocess = {};
-
 params.preprocess.S1 = {
   bands: ['VH', 'VV', 'ratio', 'angle'],
   orbit: 'Both', // Auto, Both, Ascending, or Descending
@@ -142,9 +132,6 @@ params.preprocess.S1 = {
   scaleFactor: 30,
   edgeMask: -30 
 };
-
-// ---------------------------------------------------------------
-// Endmembers
 params.preprocess.endMembers = {
   gv: [500, 900, 400, 6100, 3000, 1000],
   npv: [1400, 1700, 2200, 3000, 5500, 3000],
@@ -154,10 +141,7 @@ params.preprocess.endMembers = {
   cfThreshold: 0.05
 };
 
-// ---------------------------------------------------------------
-// Visualization Parameters
 params.visual = {};
-
 params.visual.S2 = {
   sensor: 'Sentinel-2',
   short: 'S2',
@@ -165,7 +149,6 @@ params.visual.S2 = {
   min: 0,
   max: 5000
 };
-
 params.visual.S1 = {
   sensor: 'Sentinel-1',
   short: 'S1',
@@ -173,7 +156,6 @@ params.visual.S1 = {
   min: 10,
   max: 30
 };
-
 params.visual.LST = {
   sensor: 'Landsat',
   short: 'LST',
@@ -181,7 +163,6 @@ params.visual.LST = {
   min: 0,
   max: 5000
 };
-
 params.visual.mask = {
   min: 0,
   max: 1,
@@ -195,27 +176,34 @@ var toFracYear = function(date) {
 };
 
 params.visual.alerts = {
-  min: 30,
-  max: 365,
+  min: 0,
+  max: 75,
   palette: ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026']
 };
 
-// ---------------------------------------------------------------
-// Plotting Parameters
 params.plot = {};
 params.plot.dateFormat = 1;
 params.plot.padding = 0.2;
 
-// ---------------------------------------------------------------
-// Posible Driver Parameters
 params.driver = {};
-params.driver.size = 2000;
+params.driver.size = 3500;
+
+params.protectedArea = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+                      .filterBounds(params.area);
 
 // ---------------------------------------------------------------
-// Exports
-// print(params);
-exports = {
-  params: params
-};
+// Initialization:
+var uiPanel = plotter.createPanel(params);
+ui.root.clear();
+ui.root.add(uiPanel);
+
+var mapPanel = uiPanel.getFirstPanel().widgets().get(0);
+
+mapPanel.addLayer(params.forestMask.clip(params.area), {min:0, max:1}, 'Forest Mask', false);
+mapPanel.addLayer(params.biomeMask.clip(params.area), {min:0, max:1}, 'Biome Mask', false);
+mapPanel.addLayer(params.protectedArea, {color:'black'}, 'Protected Area', false);
+mapPanel.addLayer(params.area, {color: 'red'}, 'Study Area', false);
+mapPanel.centerObject(params.area, 3);
+mapPanel.setOptions('SATELLITE');
 
 // End

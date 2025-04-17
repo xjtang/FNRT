@@ -1,30 +1,29 @@
 /**** Start of imports. If edited, may not auto-convert in the playground. ****/
-var area = 
-    /* color: #d63000 */
-    /* displayProperties: [
-      {
-        "type": "rectangle"
-      }
-    ] */
-    ee.Geometry.Polygon(
-        [[[-56.93551140035393, -5.805198324833778],
-          [-56.93551140035393, -8.502888900630557],
-          [-53.76046257222893, -8.502888900630557],
-          [-53.76046257222893, -5.805198324833778]]], null, false);
+var area = /* color: #0712d6 */ee.Geometry.Polygon(
+        [[[-3.415408215037443, 7.526826143921267],
+          [-3.349490246287443, 4.9934077992956105],
+          [-2.097048840037443, 4.511672806338085],
+          [-1.2291289181624432, 4.818270577990673],
+          [0.045285144337556815, 5.420105612761977],
+          [0.4407929568375568, 6.141510923923672],
+          [-1.1192656369124432, 7.385211511640545],
+          [-3.140750011912443, 7.842567851512786]]]);
 /***** End of imports. If edited, may not auto-convert in the playground. *****/
 // Fusion Near Real-time
 // Near real-time monitoring of forest disturbance by fusion of multi-sensor data
 
-// Model settings and parameters (Template)
+// Model settings and parameters (Ghana)
 var params = {
   forestMask: ee.ImageCollection('ESA/WorldCover/v200').first().eq(10),
   biomeMask: ee.Image('projects/fusionnrt/assets/misc/biome_mask'),
-  grid: ee.FeatureCollection('projects/fusionnrt/assets/misc/GLANCE_V01_SA_GEOG_TILE')
+  pastMask: ee.ImageCollection('projects/fusionnrt/assets/archive/alerts_2024')
+              .mosaic().select('Deforestaion').unmask().eq(0),
+  grid: ee.FeatureCollection('projects/fusionnrt/assets/misc/GLANCE_V01_AF_GEOG_TILE')
           .filterMetadata('land', 'equals', 1),
   area: area,
-  wd: 'projects/fusionnrt/assets/amazon/',
+  wd: 'projects/fusionnrt/assets/ghana/2025/',
   proj: 'EPSG:4326',
-  bucket: 'fnrt-amazon',
+  bucket: 'fnrt-africa',
   cloud: false
 };
 
@@ -33,13 +32,13 @@ var params = {
 params.period = {};
 
 params.period.training = {
-  start: '2021-01-01',
-  end: '2022-12-31'
+  start: '2022-01-01',
+  end: '2024-12-31'
 };
 
 params.period.monitor = {
-  start: '2023-01-01',
-  end: '2023-12-31'
+  start: '2025-01-01',
+  end: '2025-12-31'
 };
 
 params.period.full = {
@@ -47,8 +46,11 @@ params.period.full = {
   end: params.period.monitor.end
 };
 
-params.period.alert = '2023-01-01';
-     
+params.period.alert = {
+  start: '2025-01-01',
+  end: '2025-12-31'
+};
+
 // ---------------------------------------------------------------
 // Training Parameters
 params.training = {};
@@ -66,10 +68,10 @@ params.training.S1 = {
   sensor: 'Sentinel-1',
   short: 'S1',
   band: 'VH',
-  res: 10,
+  res: 20,
   enable: true,
-  harmonics: 1,
-  minImage: 20
+  harmonics: 3,
+  minImage: 50
 };
 
 params.training.LST = {
@@ -88,20 +90,20 @@ params.monitor = {
     strikeOut: 4,
     monitorWindow: 5,
     maxZ: 25,
-    res: 10,
+    res: 20,
     recover: false,
     resume: true,
-    minSize: 100
+    minSize: 25
   };
   
 params.monitor.S2 = {
   sensor: 'Sentinel-2',
   short: 'S2',
   id: 2,
-  zThres: 4,
+  zThres: 3.5,
   directional: 1,
   changeOnly: false,
-  minRMSE: 500,
+  minRMSE: 250,
   maxValue: 10000
 };
 
@@ -112,17 +114,17 @@ params.monitor.S1 = {
   zThres: 2.25,
   directional: 1,
   changeOnly: true,
-  minRMSE: 0.01
+  minRMSE: 0.01,
 };
 
 params.monitor.LST = {
   sensor: 'Landsat',
   short: 'LST',
   id: 1,
-  zThres: 2,
+  zThres: 3.5,
   directional: 1,
   changeOnly: false,
-  minRMSE: 500,
+  minRMSE: 250,
   maxValue: 10000
 };
 
@@ -185,7 +187,7 @@ params.visual.LST = {
 params.visual.mask = {
   min: 0,
   max: 1,
-  palette: ['white', 'blue']
+  palette: ['blue']
 };
 
 var toFracYear = function(date) {
@@ -195,7 +197,9 @@ var toFracYear = function(date) {
 };
 
 params.visual.alerts = {
-  min: 30,
+  //min: toFracYear(ee.Date(params.period.monitor.start)).getInfo(),
+  //max: toFracYear(ee.Date(params.period.monitor.end)).getInfo(),
+  min: 0,
   max: 365,
   palette: ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026']
 };
@@ -209,7 +213,12 @@ params.plot.padding = 0.2;
 // ---------------------------------------------------------------
 // Posible Driver Parameters
 params.driver = {};
-params.driver.size = 2000;
+params.driver.size = 3500;
+
+// ---------------------------------------------------------------
+// Other Parameters
+params.protectedArea = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+                      .filterBounds(params.area);
 
 // ---------------------------------------------------------------
 // Exports

@@ -1,7 +1,7 @@
 // Fusion Near Real-time
 // Near real-time monitoring of forest disturbance by fusion of multi-sensor data
 
-// Plol NRT Results of Individual Pixels (reading from Google Cloud)
+// Plol NRT Results of Individual Pixels (Live Plotter)
 
 // ---------------------------------------------------------------
 // Imports and predefined variables:
@@ -19,32 +19,21 @@ var params = utParams.params;
 //params.preprocess.S1.rawPower = true;
 //params.training.S1.band = 'VH';
 
-
 var createPanel = function(params) {
-
   var year = params.period.monitor.end.slice(0, 4);
   var chartPeriod = {
     start: year + '-01-01',
     end: year + '-12-31'
   };
-
+  
   // ---------------------------------------------------------------
   // Main functions:
-  var getTrainingFromCloud = function(pixel, sensor, orbit) {
-    var trainingEndYear = params.period.training.end.slice(0, 4);
-    var tile = params.grid.filterBounds(pixel).first();
-    var h = tile.getNumber('horizontal').getInfo();
-    var v = tile.getNumber('vertical').getInfo();
-    var tileID = 'h' + ('000' + h).substr(-3) + 'v' + ('000' + v).substr(-3);
-    var path = 'gs://' + params.bucket + '/training/' + sensor + '/' + tileID + '_' + 
-                sensor + '_' + trainingEndYear +orbit + '_T.tif';
-    //print(path);
-    return ee.Image.loadGeoTIFF(path);
-  };
-  
     // run and plot CCD for a pixel
   var chartCCD = function(coords) {
     resetTSPanel();
+
+    //print(params);
+    //print(ccd);
     var sensor = ccdSelect.getValue();
     //tsPanel.add(ui.Label('Running CCD on ' + sensor + ' data...'));
     var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
@@ -75,8 +64,7 @@ var createPanel = function(params) {
     if (sensor == 'Landsat') {
       var trainDataLST = utInput.getData(pixel, params, params.period.training, 'Landsat', false);
       var monitorDataLST = utInput.getData(pixel, params, chartPeriod, 'Landsat', true);
-      //var modelLST = ccd.filter(ee.Filter.eq('sensor', 'Landsat')).filterBounds(pixel).mosaic();
-      var modelLST = getTrainingFromCloud(pixel, params.training.LST.short, '');
+      var modelLST = utNRT.training(trainDataLST, params.training.LST.band, params.training.LST.harmonics);//.updateMask(params.forestMask);
       //print(modelLST);
       var ccdTSLST = utChart.getTimeSeries(trainDataLST, monitorDataLST, modelLST, pixel, params.training.LST.band, 
                                             params.training.LST.res, params.monitor.LST.minRMSE, params);
@@ -85,8 +73,7 @@ var createPanel = function(params) {
     } else if (sensor == 'Sentinel-2') {
       var trainDataS2 = utInput.getData(pixel, params, params.period.training, 'Sentinel-2', false);
       var monitorDataS2 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-2', false);
-      //var modelS2 = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-2')).filterBounds(pixel).mosaic();
-      var modelS2 = getTrainingFromCloud(pixel, params.training.S2.short, '');
+      var modelS2 = utNRT.training(trainDataS2, params.training.S2.band, params.training.S2.harmonics);//.updateMask(params.forestMask);
       var ccdTSS2 = utChart.getTimeSeries(trainDataS2, monitorDataS2, modelS2, pixel, params.training.S2.band, 
                                           params.training.S2.res, params.monitor.S2.minRMSE, params);
       //print(ccdTSS2);
@@ -96,7 +83,7 @@ var createPanel = function(params) {
       //print(trainDataS1);
       var monitorDataS1 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-1', false);
       //print(monitorDataS1);
-      //var modelS1 = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1')).filterBounds(pixel);
+      var modelS1 = utNRT.training(trainDataS1, params.training.S1.band, params.training.S1.harmonics);//.updateMask(params.forestMask);
       //print(modelS1);
       if (params.preprocess.S1.splitOrbit){
         var orbitList = ee.Dictionary(trainDataS1.aggregate_histogram('relativeOrbitNumber_start')).keys();
@@ -108,9 +95,7 @@ var createPanel = function(params) {
           //print(trainDataOrbit);
           var monitorDataOrbit = monitorDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
           //print(monitorDataOrbit);
-          //var modelOrbit = modelS1.filter(ee.Filter.eq('orbit', orbit)).mosaic();
-          var orbitCode = '_OB' + orbit.getInfo();
-          var modelOrbit = getTrainingFromCloud(pixel, params.training.S1.short, orbitCode);
+          var modelOrbit = utNRT.training(trainDataOrbit, params.training.S1.band, params.training.S1.harmonics);//.updateMask(params.forestMask);
           //print(modelOrbit);
           var ccdTSOrbit = utChart.getTimeSeries(trainDataOrbit, monitorDataOrbit, modelOrbit, pixel, 
                                                   params.training.S1.band, params.training.S1.res, 
@@ -120,7 +105,6 @@ var createPanel = function(params) {
           genCCDChart(ccdTSOrbit, 'Sentinel-1', orbitID, params.training.S1.res, params.visual.S1);
         }
       } else {
-        var modelS1 = getTrainingFromCloud(pixel, params.training.S1.short, '');
         var ccdTSS1 = utChart.getTimeSeries(trainDataS1, monitorDataS1, modelS1, pixel, params.training.S1.band, 
                                             params.training.S1.res, params.monitor.S1.minRMSE, params);
         genCCDChart(ccdTSS1, 'Sentinel-1', params.training.S1.band, params.training.S1.res, params.visual.S1);
@@ -131,6 +115,7 @@ var createPanel = function(params) {
     // run and plot NRT for a pixel (separate sensors)
   var chartNRT = function(coords) {
     resetTSPanel();
+
     //tsPanel.add(ui.Label('Running NRT separately...'));
     var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
     utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
@@ -165,7 +150,7 @@ var createPanel = function(params) {
     if (LSTCheck.getValue()) {
       var trainDataLST = utInput.getData(pixel, params, params.period.training, 'Landsat', false);
       var monitorDataLST = utInput.getData(pixel, params, chartPeriod, 'Landsat', true);
-      var modelLST = getTrainingFromCloud(pixel, params.training.LST.short, '');
+      var modelLST = utNRT.training(trainDataLST, params.training.LST.band, params.training.LST.harmonics);//.updateMask(params.forestMask);
       var ccdTSLST = utChart.getTimeSeries(trainDataLST, monitorDataLST, modelLST, pixel, params.training.LST.band, 
                                         params.training.LST.res, params.monitor.LST.minRMSE, params)
                             .filterMetadata('x', 'not_equals', null);
@@ -176,7 +161,7 @@ var createPanel = function(params) {
     if (S2Check.getValue()) {
       var trainDataS2 = utInput.getData(pixel, params, params.period.training, 'Sentinel-2', false);
       var monitorDataS2 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-2', false);
-      var modelS2 = getTrainingFromCloud(pixel, params.training.S2.short, '');
+      var modelS2 = utNRT.training(trainDataS2, params.training.S2.band, params.training.S2.harmonics);//.updateMask(params.forestMask);
       var ccdTSS2 = utChart.getTimeSeries(trainDataS2, monitorDataS2, modelS2, pixel, params.training.S2.band, 
                                         params.training.S2.res, params.monitor.S2.minRMSE, params)
                             .filterMetadata('x', 'not_equals', null);
@@ -187,6 +172,7 @@ var createPanel = function(params) {
     if (S1Check.getValue()) {
       var trainDataS1 = utInput.getData(pixel, params, params.period.training, 'Sentinel-1', false);
       var monitorDataS1 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-1', false);
+      var modelS1 = utNRT.training(trainDataS1, params.training.S1.band, params.training.S1.harmonics);//.updateMask(params.forestMask);
       if (params.preprocess.S1.splitOrbit){
         var orbitList = ee.Dictionary(trainDataS1.aggregate_histogram('relativeOrbitNumber_start')).keys();
         var nOrbit = orbitList.length().getInfo();
@@ -194,8 +180,7 @@ var createPanel = function(params) {
           var orbit = ee.Number.parse(orbitList.get(j));
           var trainDataOrbit = trainDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
           var monitorDataOrbit = monitorDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
-          var orbitCode = '_OB' + orbit.getInfo();
-          var modelOrbit = getTrainingFromCloud(pixel, params.training.S1.short, orbitCode);
+          var modelOrbit = utNRT.training(trainDataOrbit, params.training.S1.band, params.training.S1.harmonics);//.updateMask(params.forestMask);
           var ccdTSOrbit = utChart.getTimeSeries(trainDataOrbit, monitorDataOrbit, modelOrbit, pixel, 
                                                   params.training.S1.band, params.training.S1.res, 
                                                   params.monitor.S1.minRMSE, params)
@@ -205,7 +190,6 @@ var createPanel = function(params) {
           genNRTChart(nrtTSOrbit, 'Sentinel-1', orbitID, params.visual.S1);
         }
       } else {
-        var modelS1 = getTrainingFromCloud(pixel, params.training.S1.short, '');
         var ccdTSS1 = utChart.getTimeSeries(trainDataS1, monitorDataS1, modelS1, pixel, params.training.S1.band, 
                                             params.training.S1.res, params.monitor.S1.minRMSE, params)
                               .filterMetadata('x', 'not_equals', null);
@@ -225,6 +209,13 @@ var createPanel = function(params) {
     };
     
     resetTSPanel();
+    
+    if (params.ccd) {
+      var ccd = params.ccd;
+    } else {
+      var ccd = ee.ImageCollection(params.wd + 'training');
+    }
+    
     //tsPanel.add(ui.Label('Running NRT merged...'));
     var pixel = ee.Geometry.Point([coords.lon, coords.lat]);
     utCommon.addPixel(mapPanel, coords, params.monitor.res/222640, '0000FF', 'Clicked');
@@ -233,7 +224,7 @@ var createPanel = function(params) {
     if (LSTCheck.getValue()) {
       var trainDataLST = utInput.getData(pixel, params, params.period.training, 'Landsat', false);
       var monitorDataLST = utInput.getData(pixel, params, chartPeriod, 'Landsat', true);
-      var modelLST = getTrainingFromCloud(pixel, params.training.LST.short, '');
+      var modelLST = utNRT.training(trainDataLST, params.training.LST.band, params.training.LST.harmonics);//.updateMask(params.forestMask);
       var ccdTSLST = utChart.getTimeSeries(trainDataLST, monitorDataLST, modelLST, pixel, params.training.LST.band, 
                                         params.training.LST.res, params.monitor.LST.minRMSE, params)
                             .filterMetadata('x', 'not_equals', null);
@@ -243,7 +234,7 @@ var createPanel = function(params) {
     if (S2Check.getValue()) {
       var trainDataS2 = utInput.getData(pixel, params, params.period.training, 'Sentinel-2', false);
       var monitorDataS2 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-2', false);
-      var modelS2 = getTrainingFromCloud(pixel, params.training.S2.short, '');
+      var modelS2 = utNRT.training(trainDataS2, params.training.S2.band, params.training.S2.harmonics);//.updateMask(params.forestMask);
       var ccdTSS2 = utChart.getTimeSeries(trainDataS2, monitorDataS2, modelS2, pixel, params.training.S2.band, 
                                         params.training.S2.res, params.monitor.S2.minRMSE, params)
                             .filterMetadata('x', 'not_equals', null);
@@ -253,6 +244,7 @@ var createPanel = function(params) {
     if (S1Check.getValue()) {
       var trainDataS1 = utInput.getData(pixel, params, params.period.training, 'Sentinel-1', false);
       var monitorDataS1 = utInput.getData(pixel, params, chartPeriod, 'Sentinel-1', false);
+      var modelS1 = utNRT.training(trainDataS1, params.training.S1.band, params.training.S1.harmonics);//.updateMask(params.forestMask);
       if (params.preprocess.S1.splitOrbit){
         var orbitList = ee.Dictionary(trainDataS1.aggregate_histogram('relativeOrbitNumber_start')).keys();
         var nOrbit = orbitList.length().getInfo();
@@ -260,8 +252,7 @@ var createPanel = function(params) {
           var orbit = ee.Number.parse(orbitList.get(j));
           var trainDataOrbit = trainDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
           var monitorDataOrbit = monitorDataS1.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
-          var orbitCode = '_OB' + orbit.getInfo();
-          var modelOrbit = getTrainingFromCloud(pixel, params.training.S1.short, orbitCode);
+          var modelOrbit = utNRT.training(trainDataOrbit, params.training.S1.band, params.training.S1.harmonics);//.updateMask(params.forestMask);
           var ccdTSOrbit = utChart.getTimeSeries(trainDataOrbit, monitorDataOrbit, modelOrbit, pixel, 
                                                   params.training.S1.band, params.training.S1.res, 
                                                   params.monitor.S1.minRMSE, params)
@@ -269,7 +260,6 @@ var createPanel = function(params) {
           nrtTS = nrtTS.merge(utChart.getNRTTimeSeries(ccdTSOrbit, params, params.monitor.S1));
         }
       } else {
-        var modelS1 = getTrainingFromCloud(pixel, params.training.S1.short, '');
         var ccdTSS1 = utChart.getTimeSeries(trainDataS1, monitorDataS1, modelS1, pixel, params.training.S1.band, 
                                             params.training.S1.res, params.monitor.S1.minRMSE, params)
                               .filterMetadata('x', 'not_equals', null);
@@ -320,11 +310,15 @@ var createPanel = function(params) {
     //initialize
   var initialize = function() {
     utCommon.removeLayer(mapPanel, 'Alert');
-    var alerts = ee.ImageCollection(params.wd + 'alerts').mosaic().clip(params.area);
+    if (params.alerts) {
+      var alerts = params.alerts.mosaic()//.clip(params.area);
+    } else {
+      var alerts = ee.ImageCollection(params.wd + 'alerts').mosaic().clip(params.area);
+    }
     mapPanel.addLayer(alerts.select('Filtered'), params.visual.alerts, 'Alerts (All)', true);
     mapPanel.addLayer(alerts.select('Filtered').clip(params.protectedArea), params.visual.alerts, 'Alerts in Protected Area', false);
     //mapPanel.addLayer(alerts, {}, 'Alerts (Full Image)', false);
-    mapPanel.addLayer(alerts.select('Deforestaion'), params.visual.alerts, 'Possible Deforestation (Beta)', false);
+    mapPanel.addLayer(alerts.select('Deforestation'), params.visual.alerts, 'Possible Deforestation (Beta)', false);
     mapPanel.addLayer(alerts.select('Recovered'), params.visual.alerts, 'Already Recovered (Beta)', false);
     if (params.driver.size) {
       mapPanel.addLayer(alerts.select('Natural'), params.visual.alerts, 'Possible Natural (Beta)', false);
@@ -374,11 +368,9 @@ var createPanel = function(params) {
     widgets:[mapPanel]});
     
   var uiPanel = ui.SplitPanel(mapPanel2, controlPanel, 'vertical');
-    
+  
   // ---------------------------------------------------------------
   // Runtime functions:
-  loadButton.onClick(initialize);
-  
   ccdButton.onClick(function() {
     if (listener == 1) {
       ccdButton.setLabel('CCD');
@@ -404,6 +396,8 @@ var createPanel = function(params) {
   resetButton.onClick(function() {
     resetAll();
   });
+  
+  loadButton.onClick(initialize);
   
   mapPanel.onClick(function(coords) {
     if (listener == 1) {
@@ -437,7 +431,6 @@ var createPanel = function(params) {
 // Exports:
 exports = {
   createPanel: createPanel
-
 };
 
 // End

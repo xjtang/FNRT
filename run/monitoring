@@ -52,9 +52,45 @@ var runTile = function(region, params, h, v) {
   var tileID = 'h' + ('000' + h).substr(-3) + 'v' + ('000' + v).substr(-3);
   var flags = ee.ImageCollection([]);
   
+  var period = {};
+  period.start = params.period.monitor.start;
+  period.end = params.period.monitor.end;
+  //print(period);
+  var cacheStartDate = params.period.monitor.start;
+  var trainingEndYear = params.period.training.end.slice(0, 4);
+  var baseDate = trainingEndYear + '-01-01';
+  //var latestImageDate = ee.Date(params.period.monitor.start);
+  
+  var dates = ee.Image.constant(ee.List.repeat(0, params.monitor.strikeOut))
+                .rename(genTags('Date_', params.monitor.strikeOut));
+  //print(dates);
+  var initial = ee.Image([0, 0, 0, 0]).rename(['Change', 'Recover', 'DoC', 'DoD'])
+                  .addBands(dates).toUint16();
+  //print(initial);
+  
+  if (params.monitor.resume) {
+    var thisCache = cache.filter(ee.Filter.eq('horizontal', h))
+                          .filter(ee.Filter.eq('vertical', v))
+                          .sort('end', false);
+                          
+    if (thisCache.size().getInfo() > 0) {
+      initial = thisCache.first();
+      cacheStartDate = thisCache.first().get('start').getInfo();
+      var lastEndDate= thisCache.first().get('end').getInfo();
+      //print(params.period.monitor);
+      period.start = ee.Date(lastEndDate).advance(1, 'day')
+                                      .format('YYYY-MM-dd').getInfo();
+      //print(params.period.monitor);
+      //print(period);
+      print('Successgully read cache for ' + lastEndDate);
+    }
+  }
+  
   if (params.training.LST.enable) {
   //if (false) {
-    var LST_Data = utInput.getData(region, params, params.period.monitor, 'Landsat', true);
+    var LST_Data = utInput.getData(region, params, period, 'Landsat', true);
+    //var LST_Last = LST_Data.sort('system:time_start', false).first().date();
+    //latestImageDate = ee.Algorithms.If(LST_Last.difference(latestImageDate, 'day').gt(0), LST_Last, latestImageDate);
     var LST_Training = ccd.filter(ee.Filter.eq('sensor', 'Landsat'))
                           .filterBounds(region)
                           .filter(ee.Filter.eq('horizontal', h))
@@ -70,12 +106,15 @@ var runTile = function(region, params, h, v) {
       flags = flags.merge(LST_Flags);
     } else {
       print('LST ' + tileID + ' training file not exist.');
+      return 0;
     }
   }
 
   if (params.training.S2.enable) {
   //if (false) {
-    var S2_Data = utInput.getData(region, params, params.period.monitor, 'Sentinel-2', true);
+    var S2_Data = utInput.getData(region, params, period, 'Sentinel-2', true);
+    //var S2Last = S2_Data.sort('system:time_start', false).first().date();
+    //latestImageDate = ee.Algorithms.If(S2Last.difference(latestImageDate, 'day').gt(0), S2Last, latestImageDate);
     var S2_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-2'))
                           .filterBounds(region)
                           .filter(ee.Filter.eq('horizontal', h))
@@ -88,37 +127,55 @@ var runTile = function(region, params, h, v) {
       flags = flags.merge(S2_Flags);
     } else {
       print('S2 ' + tileID + ' training file not exist.');
+      return 0;
     }
   }
 
   if (params.training.S1.enable) {
   //if (false) {
+    var S1_data = utInput.getData(region, params, period, 'Sentinel-1', false);
+    
     if (params.preprocess.S1.splitOrbit){
-      var S1_data = utInput.getData(region, params, params.period.monitor, 'Sentinel-1', false);
       var orbitList = ee.Dictionary(S1_data.aggregate_histogram('relativeOrbitNumber_start'))
                         .keys();
       //print(orbitList);
       var nOrbit = orbitList.length().getInfo();
       for (var j = 0; j < nOrbit; j++) {
-        var orbit = ee.Number.parse(orbitList.get(j));
-        //print(orbit);
-        var S1_data_orbit = S1_data.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
-        //print(S1_data_orbit);
-        var S1_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1'))
+        var S1_Training_All = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1'))
                               .filterBounds(region)
                               .filter(ee.Filter.eq('horizontal', h))
-                              .filter(ee.Filter.eq('vertical', v))
-                              .filter(ee.Filter.eq('orbit', orbit));
-        if (S1_Training.size().getInfo() > 0) {
-          var S1_ccdIMG = utNRT.getCCDImage(S1_Training.mosaic(), params.training.S1.band, params.training.S1.harmonics);
-          var S1_Flags = normalizeData(S1_data_orbit, S1_ccdIMG, params.training.S1.band, params.monitor.S1,
-                                        params.training.S1.harmonics);
-          flags = flags.merge(S1_Flags);
+                              .filter(ee.Filter.eq('vertical', v));
+        if (S1_Training_All.size().getInfo() > 0) {
+          var orbit = ee.Number.parse(orbitList.get(j));
+          //print(orbit);
+          var S1_data_orbit = S1_data.filter(ee.Filter.eq('relativeOrbitNumber_start', orbit));
+          
+          //var S1Last = S1_data_orbit.sort('system:time_start', false).first().date();
+          //latestImageDate = ee.Algorithms.If(S1Last.difference(latestImageDate, 'day').gt(0), S1Last, latestImageDate);
+          //print(S1_data_orbit);
+          var S1_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1'))
+                                .filterBounds(region)
+                                .filter(ee.Filter.eq('horizontal', h))
+                                .filter(ee.Filter.eq('vertical', v))
+                                .filter(ee.Filter.eq('orbit', orbit));
+          if (S1_Training.size().getInfo() > 0) {
+            var S1_ccdIMG = utNRT.getCCDImage(S1_Training.mosaic(), params.training.S1.band, params.training.S1.harmonics);
+            var S1_Flags = normalizeData(S1_data_orbit, S1_ccdIMG, params.training.S1.band, params.monitor.S1,
+                                          params.training.S1.harmonics);
+            flags = flags.merge(S1_Flags);
+          } else {
+            print('Orbit ' + orbit.getInfo() + ' Tile ' + tileID + 'training file not exist.');
+            //return 0;
+          }
         } else {
-          print('Orbit ' + orbit.getInfo() + 'training file not exist.');
+          print('S1 ' + tileID + ' training file not exist.');
+          return 0;
         }
       }
     } else {
+        //var S1Last = S1_data.sort('system:time_start', false).first().date();
+        //latestImageDate = ee.Algorithms.If(S1Last.difference(latestImageDate, 'day').gt(0), S1Last, latestImageDate);
+        
         var S1_Training = ccd.filter(ee.Filter.eq('sensor', 'Sentinel-1'))
                               .filterBounds(region)
                               .filter(ee.Filter.eq('horizontal', h))
@@ -126,39 +183,20 @@ var runTile = function(region, params, h, v) {
         if (S1_Training.size().getInfo() > 0) {
           var S1_ccdIMG = utNRT.getCCDImage(S1_Training.mosaic(), params.training.S1.band, 
                                             params.training.S1.harmonics);
-          var S1_Flags = normalizeData(S1_data_orbit, S1_ccdIMG, params.monitor.S1, params.training.S1.harmonics);
+          var S1_Flags = normalizeData(S1_data, S1_ccdIMG, params.monitor.S1, params.training.S1.harmonics);
           flags = flags.merge(S1_Flags);
         } else {
           print('S1 ' + tileID + ' training file not exist.');
+          return 0;
         }
     }
   }
   //print(flags);
   //Map.addLayer(flags, {}, 'flags', false);
   
-  var dates = ee.Image.constant(ee.List.repeat(0, params.monitor.strikeOut))
-                .rename(genTags('Date_', params.monitor.strikeOut));
-  //print(dates);
-  var initial = ee.Image([0, 0, 0, 0]).rename(['Change', 'Recover', 'DoC', 'DoD'])
-                  .addBands(dates).toUint16();
-  //print(initial);
-  
-  var cacheStartDate = params.period.monitor.start;
-  var trainingEndYear = params.period.training.end.slice(0, 4);
-  var baseDate = trainingEndYear + '-01-01';
+  //params.period.monitor.end = ee.Date(latestImageDate).format('YYYY-MM-dd').getInfo();
 
-  if (params.monitor.resume) {
-    var lastEndDate = ee.Date(params.period.monitor.start).advance(-1, 'day')
-                          .format('YYYY-MM-dd').getInfo();
-    var thisCache = cache.filterBounds(region).filter(ee.Filter.eq('end', lastEndDate));
-    if (thisCache.size().getInfo() > 0) {
-      initial = cache.filterBounds(region).mosaic();
-      cacheStartDate = cache.first().get('start').getInfo();
-      print('Successgully read cache');
-    }
-  }
-
-  var endDateLabel = params.period.monitor.end.replace(/-/g, '');
+  var endDateLabel = period.end.replace(/-/g, '');
   var cache_des = tileID + '_' + endDateLabel + '_C';
 
   var monitor_result = utNRT.monitor(flags.sort('system:time_start'), initial, params.monitor, baseDate)
@@ -167,10 +205,10 @@ var runTile = function(region, params, h, v) {
     .set({S2: params.training.S2.enable.toString()})
     .set({horizontal: h, vertical: v})
     .set({baseDate: baseDate})
-    .set({start: cacheStartDate, end: params.period.monitor.end})
+    .set({start: cacheStartDate, end: period.end})
     .set(extraInfo)
     .set({'system:time_start': ee.Date(cacheStartDate).millis()})
-    .set({'system:time_end': ee.Date(params.period.monitor.end).millis()})
+    .set({'system:time_end': ee.Date(period.end).millis()})
     .set({'system:index': cache_des})
     .updateMask(params.forestMask).toUint16();
   //print(monitor_result);

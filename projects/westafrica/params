@@ -1,0 +1,319 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var area2 = 
+    /* color: #0712d6 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-2.7535939897609074, 4.4590660614434805],
+          [-1.2814260210109074, 4.393344692795441],
+          [-0.5783010210109074, 5.072170539382186],
+          [0.4983591352390926, 5.400384487073756],
+          [1.5750192914890926, 6.034418342469491],
+          [1.4871286664890926, 6.318404507651998],
+          [0.8059763227390926, 6.711357506881398],
+          [0.8279489789890926, 7.125797093513446],
+          [0.8059763227390926, 7.714088328719065],
+          [0.8718942914890926, 8.431995268471548],
+          [0.7180856977390926, 8.736166121063217],
+          [0.7620310102390926, 9.40879295773988],
+          [0.5203317914890926, 9.603831091815001],
+          [0.5423044477390926, 10.382839012125274],
+          [0.1467966352390926, 10.771625703645148],
+          [0.10285132273909259, 11.44001809109444],
+          [-0.6661916460109074, 11.267676937691267],
+          [-3.0612111772609074, 11.181467514029942],
+          [-2.9074025835109074, 8.431995268471548],
+          [-3.3688283647609074, 7.387356842753319],
+          [-3.2809377397609074, 4.831373592731569]]]),
+    area3 = 
+    /* color: #00d629 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-0.9092963492737605, 7.810703924029024],
+          [-0.9092963492737605, 7.129890535491443],
+          [-0.20342476724251046, 7.129890535491443],
+          [-0.20342476724251046, 7.810703924029024]]], null, false),
+    area = /* color: #98ff00 */ee.Geometry.Polygon(
+        [[[-17.23540840076083, 14.171891124750687],
+          [-17.24147104357894, 13.530718461969155],
+          [-17.230774170782688, 12.902879414350027],
+          [-16.221937251616332, 10.664015415272143],
+          [-15.228708431333251, 10.361512506353451],
+          [-14.502054557633155, 9.58108379149113],
+          [-13.387480718926973, 7.496631882406012],
+          [-10.81668882921487, 5.5319558923257],
+          [-7.696578240537362, 3.823857912607808],
+          [-6.026657566343857, 4.086899088438992],
+          [-4.8843256753733835, 4.591548220011111],
+          [-3.54374945444844, 4.7222182422825325],
+          [-1.7200210561346565, 4.262211134496045],
+          [1.312201793240531, 5.356958146449189],
+          [2.805774970603987, 5.818090581324996],
+          [4.3444239593981475, 5.794333405998251],
+          [5.750675109778932, 3.9553910587688628],
+          [8.310486325187965, 4.470356939831527],
+          [9.573909984527997, 5.444471518777662],
+          [9.837197772215976, 6.012904950116741],
+          [10.496757837427955, 6.362420020993016],
+          [11.243827958666273, 6.056610545387858],
+          [12.1227309168554, 6.711700503187879],
+          [12.562179941612058, 7.757975560805593],
+          [13.243327440120996, 8.812511611286771],
+          [12.715983487648522, 9.192293212751144],
+          [10.584640812433808, 9.029571385661063],
+          [9.947434794003911, 9.148901555250777],
+          [9.266282580633764, 9.669145891160378],
+          [8.969651614504759, 9.983073710577445],
+          [7.91496606988446, 10.21021056230836],
+          [6.519705167281936, 10.512807399836603],
+          [4.540079596263277, 9.542423879253638],
+          [3.19345766019413, 8.304020016145516],
+          [2.6415432464243374, 8.106152635932792],
+          [1.3781182060637287, 7.670858964483931],
+          [1.0375420565888538, 7.99465094773979],
+          [0.7134463391742951, 8.157810877420975],
+          [0.4717474994088189, 8.247520873337695],
+          [0.17247175541089702, 8.23817798151871],
+          [-0.03342915346393619, 8.41348489334778],
+          [-0.4675817774008294, 8.668609049471588],
+          [-1.3760885458621717, 8.950597952340313],
+          [-2.3242673067011177, 9.14888688306628],
+          [-2.862596235830154, 9.105498236359725],
+          [-6.553994437479836, 9.192273514442133],
+          [-7.936859006773929, 9.518940135894814],
+          [-8.751253757435848, 10.058798752656255],
+          [-9.804556574723229, 10.488067444378169],
+          [-10.009182227053028, 11.542612272444817],
+          [-12.958999387205104, 12.938331499831301],
+          [-13.934201495330278, 13.5468304107674],
+          [-15.760501958844216, 13.692046568999091],
+          [-16.152995545288324, 14.162085387525181],
+          [-17.100824854363907, 14.948125472051526],
+          [-17.236899575149376, 14.700866666121636]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+// Fusion Near Real-time
+// Near real-time monitoring of forest disturbance by fusion of multi-sensor data
+
+// Model settings and parameters (West Africa)
+var params = {
+  forestMask: ee.ImageCollection('ESA/WorldCover/v200').first().eq(10),
+  biomeMask: ee.Image('projects/fusionnrt/assets/misc/biome_mask_wa'),
+  pastMask: ee.ImageCollection('projects/fusionnrt/assets/archive/alerts_2024')
+              .mosaic().select('Deforestaion').unmask().eq(0),
+  grid: ee.FeatureCollection('projects/fusionnrt/assets/misc/GLANCE_V01_AF_GEOG_TILE')
+          .filterMetadata('land', 'equals', 1),
+  area: area,
+  //wd: 'projects/bu-nearrealtime/westafrica/',
+  //wd: 'projects/fusionnrt/assets/westafrica/',
+  wd: 'projects/servir-wa/projects_ast/near_real_time/2025/',
+  proj: 'EPSG:4326',
+  bucket: 'fnrt-africa',
+  cloud: false
+};
+
+// ---------------------------------------------------------------
+// Study Time Period
+params.period = {};
+
+params.period.training = {
+  start: '2022-01-01',
+  end: '2024-12-31'
+};
+
+params.period.monitor = {
+  start: '2025-01-01',
+  end: '2025-12-31'
+};
+
+params.period.full = {
+  start: params.period.training.start,
+  end: params.period.monitor.end
+};
+
+params.period.alert = {
+  start: '2025-01-01',
+  end: '2025-12-31'
+};
+
+// ---------------------------------------------------------------
+// Training Parameters
+params.training = {};
+
+params.training.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  band: 'NDFI',
+  res: 20,
+  harmonics: 3,
+  enable: true
+};
+
+params.training.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  band: 'VH',
+  res: 20,
+  enable: true,
+  harmonics: 3,
+  minImage: 50
+};
+
+params.training.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  band: 'NDFI',
+  res: 30,
+  looseMasking: true,
+  harmonics: 3,
+  enable: true
+};
+
+// ---------------------------------------------------------------
+// Monitoring Parameters
+params.monitor = {
+    strikeOut: 4,
+    monitorWindow: 5,
+    maxZ: 25,
+    res: 20,
+    recover: false,
+    resume: true,
+    minSize: 25
+  };
+  
+params.monitor.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  id: 2,
+  zThres: 3.5,
+  directional: 1,
+  changeOnly: false,
+  minRMSE: 250,
+  maxValue: 10000
+};
+
+params.monitor.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  id: 3,
+  zThres: 2.25,
+  directional: 1,
+  changeOnly: true,
+  minRMSE: 0.01,
+};
+
+params.monitor.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  id: 1,
+  zThres: 3.5,
+  directional: 1,
+  changeOnly: false,
+  minRMSE: 250,
+  maxValue: 10000
+};
+
+// ---------------------------------------------------------------
+// Sentinel-1 Preprocessing Parameters
+params.preprocess = {};
+
+params.preprocess.S1 = {
+  bands: ['VH', 'VV', 'ratio', 'angle'],
+  orbit: 'Both', // Auto, Both, Ascending, or Descending
+  model: 'volume', // volume, surface, or direct
+  elevation: ee.Image('USGS/SRTMGL1_003'),
+  buffer: 30,
+  rawPower: false,
+  splitOrbit: true,
+  normScale: 10,
+  scaleFactor: 30,
+  edgeMask: -30 
+};
+
+// ---------------------------------------------------------------
+// Endmembers
+params.preprocess.endMembers = {
+  gv: [500, 900, 400, 6100, 3000, 1000],
+  npv: [1400, 1700, 2200, 3000, 5500, 3000],
+  soil: [2000, 3000, 3400, 5800, 6000, 5800],
+  shade: [0, 0, 0, 0, 0, 0],
+  cloud: [9000, 9600, 8000, 7800, 7200, 6500],
+  cfThreshold: 0.05
+};
+
+// ---------------------------------------------------------------
+// Visualization Parameters
+params.visual = {};
+
+params.visual.S2 = {
+  sensor: 'Sentinel-2',
+  short: 'S2',
+  bands: ['SWIR1', 'NIR', 'RED'],
+  min: 0,
+  max: 5000
+};
+
+params.visual.S1 = {
+  sensor: 'Sentinel-1',
+  short: 'S1',
+  bands: ['VV', 'VH', 'ratio'],
+  min: 10,
+  max: 30
+};
+
+params.visual.LST = {
+  sensor: 'Landsat',
+  short: 'LST',
+  bands: ['SWIR1', 'NIR', 'RED'],
+  min: 0,
+  max: 5000
+};
+
+params.visual.mask = {
+  min: 0,
+  max: 1,
+  palette: ['blue']
+};
+
+var toFracYear = function(date) {
+  var year = date.get('year');
+  var fYear = date.difference(ee.Date.fromYMD(year, 1, 1), 'year');
+  return year.add(fYear);
+};
+
+params.visual.alerts = {
+  //min: toFracYear(ee.Date(params.period.monitor.start)).getInfo(),
+  //max: toFracYear(ee.Date(params.period.monitor.end)).getInfo(),
+  min: 0,
+  max: 365,
+  palette: ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026']
+};
+
+// ---------------------------------------------------------------
+// Plotting Parameters
+params.plot = {};
+params.plot.dateFormat = 1;
+params.plot.padding = 0.2;
+
+// ---------------------------------------------------------------
+// Posible Driver Parameters
+params.driver = {};
+params.driver.size = 3500;
+
+// ---------------------------------------------------------------
+// Other Parameters
+params.protectedArea = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+                      .filterBounds(params.area);
+
+// ---------------------------------------------------------------
+// Exports
+// print(params);
+exports = {
+  params: params
+};
+
+// End

@@ -83,6 +83,88 @@ var addPixel = function(mapObject, coords, pixelSize, color, name) {
   mapObject.addLayer(pixel, {color: color}, name);
 };
 
+var genLegend = function(min, max, palette, orientation, position, title) {
+  // originally from GLanCE project
+   var viz = {min:min, max:max, palette:palette};
+   
+   if (orientation == 'vertical'){
+     var layout = ui.Panel.Layout.flow('vertical', false);
+     var coordinate = 'latitude';
+     var params = {bbox:'0,0,10,100', dimensions:'10x200'};
+     var width = '50px';
+   } else if (orientation == 'horizontal'){
+     var layout = ui.Panel.Layout.flow('horizontal', false);
+     var coordinate = 'longitude';
+     var params = {bbox:'0,0,100,10', dimensions:'200x10'};
+     var width = '330px';
+     var labwidth = '40px';
+   } else {
+     print("Orientation must be 'vertical' or 'horizontal'");
+   }
+   
+    // set position of panel
+    var legend = ui.Panel({
+      style: {
+        position: position,
+      },
+      layout: layout
+    });
+     
+    // create the legend image
+    var lon = ee.Image.pixelLonLat().select(coordinate);
+    var gradient = lon.multiply((viz.max-viz.min)/100.0).add(viz.min);
+    var legendImage = gradient.visualize(viz);
+     
+    // create text for max value
+    var maxPanel = ui.Panel({
+      widgets: [
+        ui.Label(viz['max'])
+      ],
+      style: {width: labwidth}
+    });
+
+    // create thumbnail from the image
+    var thumbnail = ui.Thumbnail({
+      image: legendImage,
+      params: params,
+      style: {padding: '1px', position: 'bottom-center'}
+    });
+
+    // create text for min value
+    var minPanel = ui.Panel({
+      widgets: [
+        ui.Label(viz['min'])
+      ],
+      style: {width: labwidth}
+    });
+     
+    // Organize panel and return
+    if (orientation == 'vertical'){
+      legend.add(maxPanel);
+      legend.add(thumbnail);
+      return legend.add(minPanel);
+    } else if (orientation == 'horizontal'){
+      legend.add(minPanel);
+      legend.add(thumbnail);
+      var outpanel = legend.add(maxPanel);
+      return ui.Panel({widgets: [
+        ui.Label({
+          value: title,
+          style: {
+            padding: '1px', 
+            position: 'top-center',
+            
+          }
+        }),
+        outpanel
+        ], 
+        style: {
+          position: position,
+          width: width
+        }});
+    }  
+};
+
 // ---------------------------------------------------------------
 // Exports
 exports = {
@@ -92,7 +174,8 @@ exports = {
   addImgDate: addImgDate,
   dailyComposite: dailyComposite,
   removeLayer: removeLayer,
-  addPixel: addPixel
+  addPixel: addPixel,
+  genLegend: genLegend
 };
 
 // End

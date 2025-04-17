@@ -43,7 +43,7 @@ var runTile = function(region, params, h, v) {
 
   if (cache.size().getInfo() > 0){
                     
-    var lastCache = cache.first();
+    var lastCache = cache.first().updateMask(params.biomeMask).updateMask(params.pastMask);
     var recover = lastCache.select('Recover');
 
     if (params.monitor.recover) {
@@ -54,10 +54,11 @@ var runTile = function(region, params, h, v) {
 
     var trainingEndYear = params.period.training.end.slice(0, 4);
     var baseDate = trainingEndYear + '-01-01';  
-    var cutoff = ee.Number(ee.Date(params.period.alert).difference(ee.Date(baseDate), 'day'));
+    var cutoff1 = ee.Number(ee.Date(params.period.alert.start).difference(ee.Date(baseDate), 'day'));
+    var cutoff2 = ee.Number(ee.Date(params.period.alert.end).difference(ee.Date(baseDate), 'day'));
     
-    date = date.subtract(cutoff).add(1).where(date.lt(cutoff), 0);
-    recover = recover.subtract(cutoff).add(1).where(recover.lt(cutoff), 0);
+    date = date.subtract(cutoff1).add(1).where(date.lt(cutoff1), 0).where(date.gt(cutoff2), 0);
+    recover = recover.subtract(cutoff1).add(1).where(recover.lt(cutoff1), 0).where(recover.gt(cutoff2), 0);
     
     var change = date.gt(0).selfMask();
     var size = change.addBands(change).toInt().reduceConnectedComponents({
@@ -66,7 +67,7 @@ var runTile = function(region, params, h, v) {
                       }).rename('Size');
     var alert = date.where(size.lt(params.monitor.minSize), 0).selfMask();
 
-    var deforestation = alert.updateMask(recover.not()).rename('Deforestaion');
+    var deforestation = alert.updateMask(recover.not()).rename('Deforestation');
     var recovered = alert.updateMask(recover).rename('Recovered');
     if (params.driver.size) {
       var natural = alert.where(size.lt(params.driver.size), 0).selfMask().rename('Natural');
@@ -78,7 +79,8 @@ var runTile = function(region, params, h, v) {
 
     var endDateLabel = lastCache.get('end').getInfo().replace(/-/g, '');
     var alert_des = tileID + '_' + endDateLabel + '_A';
-    var final = lastCache.addBands(date.selfMask().rename('Unfiltered'))
+    var final = lastCache.select('Change')
+                      .addBands(date.selfMask().rename('Unfiltered'))
                       .addBands(alert.rename('Filtered'))
                       .addBands(size)
                       .addBands(recover.rename('Recover'))
@@ -87,7 +89,8 @@ var runTile = function(region, params, h, v) {
                       .addBands(natural).addBands(anthro)
                       .set({maxSize: maxSize})
                       .set({baseDate: baseDate})
-                      .set({cutoff: params.period.alert})
+                      .set({cutoff1: params.period.alert.start})
+                      .set({cutoff2: params.period.alert.end})
                       .set({minSize: params.monitor.minSize})
                       .set({'system:index': alert_des})
                       .set(extraInfo);

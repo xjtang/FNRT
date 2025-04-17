@@ -181,7 +181,7 @@ var runTile = function(region, params, h, v) {
             genRecord(S1_Record, S1_des, S1_Output);
             
             var S1_Training = utNRT.training(S1_data_orbit, params.training.S1.band, params.training.S1.harmonics)
-                                .updateMask(params.forestMask);
+                                //.updateMask(params.forestMask);
             var S1_ccdIMG = utNRT.getCCDImage(S1_Training, params.training.S1.band, params.training.S1.harmonics)
                                 .set({tile: tileID, sensor: 'Sentinel-1', short: params.training.S1.short})
                                 .set({horizontal: h, vertical: v})
