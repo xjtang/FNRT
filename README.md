@@ -5,7 +5,9 @@ This is the operational version of the FNRT (Fusion Near Real Time) algorithm.  
 The original developer version can be found here: https://github.com/xjtang/fnrt-dev.
 
 The publication of the algorithm can be found here: https://www.sciencedirect.com/science/article/abs/pii/S0034425723001773.
- 
+
+The instruction for how to run FNRT can be found in this repo and also available on Google Drive: https://docs.google.com/document/d/1e6cyhv8ZV2aS5PUMRlYT_MAICriBCiuV4oHtT39Qii8/edit?tab=t.0
+
 To run FNRT:
  - 
  
