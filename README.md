@@ -1,5 +1,4 @@
-# FNRT
- Fusion Near Real Time (Operational)
+# Fusion Near Real Time (FNRT) [Operational]
  - 
  
  This is the operational version of the FNRT (Fusion Near Real Time) algorithm. 
@@ -14,7 +13,7 @@
  To run FNRT:
  - 
  
- - Clone the repository to Google Earth Engine
+ - Clone the repository to Google Earth Engine (GEE) or add it directly to your GEE account using the following link: https://code.earthengine.google.com/?accept_repo=users/xjtang/FNRT
  - Fix the path of all the imports (change the user name to your own username)
  - Create a new folder in GEE Asset to save the results; within the folder, create three image collections (training/cache/alerts)
  - Configure your run in the parameters script (located under utilities)
