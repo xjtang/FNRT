@@ -1,5 +1,4 @@
 # Fusion Near Real Time (FNRT) [Operational]
- - 
  
  This is the operational version of the FNRT (Fusion Near Real Time) algorithm. 
  It is an algorithm for near real-time monitoring of tropical forest disturbance using time series analysis of Landsat, Sentinel-2, and Sentinel-1 data.
